@@ -8,6 +8,7 @@ use App\Http\Controllers\Api\CartController;
 use App\Http\Controllers\Api\AccountController;
 use App\Http\Controllers\Api\AdminController;
 use App\Http\Controllers\Api\WebhookController;
+use App\Http\Controllers\Api\ProxyController;
 
 /*
 |--------------------------------------------------------------------------
@@ -28,6 +29,18 @@ Route::prefix('sections')->group(function () {
     Route::get('/', [SectionController::class, 'getByType']);
     Route::get('/hero', [SectionController::class, 'getHeroSection']);
     Route::get('/ads', [SectionController::class, 'getAdsSection']);
+});
+
+// ============================================
+// Proxy Routes for HomeIP API (Public - Avoids CORS)
+// ============================================
+
+Route::prefix('proxy')->group(function () {
+    Route::get('/products', [ProxyController::class, 'getProducts']);
+    Route::get('/products/search/{query}', [ProxyController::class, 'searchProducts']);
+    Route::get('/products/{id}', [ProxyController::class, 'getProduct']);
+    Route::get('/categories', [ProxyController::class, 'getCategories']);
+    Route::get('/categories/{id}', [ProxyController::class, 'getCategory']);
 });
 
 // ============================================
