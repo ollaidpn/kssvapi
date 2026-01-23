@@ -164,6 +164,8 @@ class ImageDownloadService
     private function isPlaceholderImage(string $url): bool
     {
         $placeholders = [
+            'aucune.png',      // Format HomeIP réel
+            'aucune.jpg',
             'aucunimage.png',
             'aucunimage.jpg',
             'aucun_image.png',
@@ -172,6 +174,8 @@ class ImageDownloadService
             'noimage.jpg',
             'no_image.png',
             'no_image.jpg',
+            'no-image.png',
+            'no-image.jpg',
             'placeholder.png',
             'placeholder.jpg',
             'default.png',

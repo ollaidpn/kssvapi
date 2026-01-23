@@ -1967,23 +1967,32 @@ class AdminController extends Controller
     public function countPendingMigrations(Request $request): JsonResponse
     {
         try {
-            $type = $request->get('type');
+            // Compter les catégories en attente
+            $categoryIds = Synchronization::where('type', 'category')
+                ->whereIn('status', ['unsync', 'changed'])
+                ->pluck('id')
+                ->toArray();
             
-            $query = Synchronization::whereIn('status', ['unsync', 'changed']);
-            
-            if ($type && $type !== 'all') {
-                $query->where('type', $type);
-            }
-            
-            $count = $query->count();
-            $ids = $query->pluck('id')->toArray();
-            
+            // Compter les items en attente
+            $itemIds = Synchronization::where('type', 'item')
+                ->whereIn('status', ['unsync', 'changed'])
+                ->pluck('id')
+                ->toArray();
+
             return response()->json([
                 'success' => true,
-                'count' => $count,
-                'ids' => $ids
+                'categories' => [
+                    'count' => count($categoryIds),
+                    'ids' => $categoryIds
+                ],
+                'items' => [
+                    'count' => count($itemIds),
+                    'ids' => $itemIds
+                ],
+                'total' => count($categoryIds) + count($itemIds)
             ]);
         } catch (\Exception $e) {
+            Log::error('countPendingMigrations error', ['error' => $e->getMessage()]);
             return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
         }
     }
