@@ -11,6 +11,7 @@ use Illuminate\Http\JsonResponse;
 use App\Http\Controllers\Controller;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use App\Services\FaykoPaymentService;
 
 class AccountController extends Controller
 {
@@ -272,6 +273,7 @@ class AccountController extends Controller
     /**
      * POST /api/orders
      * Créer une commande à partir du panier
+     * Supporte: cash_on_delivery, wave_senegal, orange_money_senegal
      */
     public function createOrder(Request $request): JsonResponse
     {
@@ -279,11 +281,16 @@ class AccountController extends Controller
             $validated = $request->validate([
                 'address' => 'required|string|max:255',
                 'city' => 'required|string|max:100',
-                'payment_method' => 'required|string|in:cash_on_delivery',
+                'payment_method' => 'required|string|in:cash_on_delivery,wave_senegal,orange_money_senegal',
             ]);
             
             $user = $request->user();
-            Log::info('API Account: Création commande', ['user_id' => $user->id]);
+            $paymentMethod = $validated['payment_method'];
+            
+            Log::info('API Account: Création commande', [
+                'user_id' => $user->id,
+                'payment_method' => $paymentMethod
+            ]);
             
             // Récupérer les articles du panier
             $cartItems = Cart::where('user_id', $user->id)
@@ -304,25 +311,29 @@ class AccountController extends Controller
             // Générer référence unique
             $reference = 'CMD-' . date('Ymd') . '-' . strtoupper(substr(uniqid(), -6));
             
+            // Déterminer le statut initial selon le mode de paiement
+            $initialStatus = $paymentMethod === 'cash_on_delivery' ? 'pending' : 'processing';
+            
             // Créer la commande
             $order = Order::create([
                 'user_id' => $user->id,
                 'reference' => $reference,
                 'total' => $total,
                 'discount' => 0,
-                'status' => 'pending',
+                'status' => $initialStatus,
                 'address' => $validated['address'],
                 'city' => $validated['city'],
-                'payment_method' => $validated['payment_method'],
+                'payment_method' => $paymentMethod,
                 'promo_code_id' => null,
             ]);
             
-            // Lier les articles du panier à la commande
+            // Lier les articles du panier à la commande et changer le type
             Cart::where('user_id', $user->id)
                 ->where('type', 'cart')
                 ->where('status', 'pending')
                 ->update([
                     'order_id' => $order->id,
+                    'type' => 'order',
                     'status' => 'ordered',
                     'total' => DB::raw('price * qty'),
                 ]);
@@ -332,9 +343,66 @@ class AccountController extends Controller
                 'order_id' => $order->id,
                 'reference' => $reference,
                 'total' => $total,
+                'payment_method' => $paymentMethod,
                 'items_count' => $cartItems->count()
             ]);
 
+            // Si paiement mobile (Wave ou Orange Money), appeler Fayko
+            if (in_array($paymentMethod, ['wave_senegal', 'orange_money_senegal'])) {
+                $faykoService = new FaykoPaymentService();
+                
+                $paymentResult = $faykoService->makePayment([
+                    'payment_method' => $paymentMethod,
+                    'amount' => $total,
+                    'currency' => 'XOF',
+                    'extra_data' => [
+                        'order_reference' => $reference,
+                        'user_id' => $user->id,
+                    ],
+                    'webhook_url' => config('app.url') . '/api/webhook/fayko',
+                ]);
+                
+                if (!$paymentResult['success']) {
+                    // Annuler la commande si Fayko échoue
+                    $order->status = 'failed';
+                    $order->save();
+                    
+                    // Remettre les articles dans le panier
+                    Cart::where('order_id', $order->id)->update([
+                        'order_id' => null,
+                        'type' => 'cart',
+                        'status' => 'pending',
+                        'total' => null,
+                    ]);
+                    
+                    Log::error('API Account: Échec initialisation paiement Fayko', [
+                        'order_id' => $order->id,
+                        'error' => $paymentResult['message'] ?? 'Unknown error'
+                    ]);
+                    
+                    return response()->json([
+                        'success' => false,
+                        'message' => $paymentResult['message'] ?? 'Erreur lors de l\'initialisation du paiement'
+                    ], 500);
+                }
+                
+                // Retourner les infos de paiement Fayko
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Paiement initialisé, en attente de confirmation',
+                    'data' => [
+                        'order_id' => $order->id,
+                        'reference' => $order->reference,
+                        'total' => (float) $order->total,
+                        'status' => 'processing',
+                        'payment_link' => $paymentResult['payment_link'],
+                        'payment_qrcode_base64' => $paymentResult['payment_qrcode_base64'],
+                        'when_expires' => $paymentResult['when_expires'],
+                    ]
+                ], 201);
+            }
+
+            // Paiement à la livraison - réponse classique
             return response()->json([
                 'success' => true,
                 'message' => 'Commande créée avec succès',
@@ -342,8 +410,10 @@ class AccountController extends Controller
                     'order_id' => $order->id,
                     'reference' => $order->reference,
                     'total' => (float) $order->total,
+                    'status' => 'pending',
                 ]
             ], 201);
+            
         } catch (\Illuminate\Validation\ValidationException $e) {
             return response()->json([
                 'success' => false,
@@ -359,6 +429,110 @@ class AccountController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Erreur lors de la création de la commande'
+            ], 500);
+        }
+    }
+
+    /**
+     * POST /api/orders/check
+     * Vérifier le statut d'une commande (pour le polling)
+     */
+    public function checkOrderStatus(Request $request): JsonResponse
+    {
+        try {
+            $validated = $request->validate([
+                'order_reference' => 'required|string',
+            ]);
+            
+            $user = $request->user();
+            
+            $order = Order::where('reference', $validated['order_reference'])
+                ->where('user_id', $user->id)
+                ->first();
+            
+            if (!$order) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Commande introuvable'
+                ], 404);
+            }
+            
+            Log::info('API Account: Check order status', [
+                'order_reference' => $validated['order_reference'],
+                'status' => $order->status
+            ]);
+            
+            return response()->json([
+                'success' => true,
+                'status' => $order->status
+            ]);
+            
+        } catch (\Exception $e) {
+            Log::error('API Account: Erreur check order status', [
+                'error' => $e->getMessage()
+            ]);
+            return response()->json([
+                'success' => false,
+                'message' => 'Erreur lors de la vérification'
+            ], 500);
+        }
+    }
+
+    /**
+     * POST /api/orders/cancel
+     * Annuler une commande en attente
+     */
+    public function cancelOrder(Request $request): JsonResponse
+    {
+        try {
+            $validated = $request->validate([
+                'order_reference' => 'required|string',
+            ]);
+            
+            $user = $request->user();
+            
+            $order = Order::where('reference', $validated['order_reference'])
+                ->where('user_id', $user->id)
+                ->whereIn('status', ['pending', 'processing'])
+                ->first();
+            
+            if (!$order) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Commande introuvable ou non annulable'
+                ], 404);
+            }
+            
+            // Annuler la commande
+            $order->status = 'cancelled';
+            $order->save();
+            
+            // Remettre les articles dans le panier
+            Cart::where('order_id', $order->id)->update([
+                'order_id' => null,
+                'type' => 'cart',
+                'status' => 'pending',
+                'total' => null,
+            ]);
+            
+            Log::info('API Account: Commande annulée', [
+                'order_id' => $order->id,
+                'order_reference' => $order->reference,
+                'user_id' => $user->id
+            ]);
+            
+            return response()->json([
+                'success' => true,
+                'message' => 'Commande annulée avec succès'
+            ]);
+            
+        } catch (\Exception $e) {
+            Log::error('API Account: Erreur annulation commande', [
+                'error' => $e->getMessage()
+            ]);
+            return response()->json([
+                'success' => false,
+                'message' => 'Erreur lors de l\'annulation'
             ], 500);
         }
     }

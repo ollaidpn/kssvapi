@@ -21,6 +21,7 @@ class Order extends Model
         'address',
         'city',
         'payment_method',
+        'transaction_id',
     ];
 
     protected $searchableFields = ['*'];

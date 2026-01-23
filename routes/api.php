@@ -7,6 +7,7 @@ use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\CartController;
 use App\Http\Controllers\Api\AccountController;
 use App\Http\Controllers\Api\AdminController;
+use App\Http\Controllers\Api\WebhookController;
 
 /*
 |--------------------------------------------------------------------------
@@ -52,6 +53,14 @@ Route::prefix('auth')->group(function () {
 });
 
 // ============================================
+// Webhook Routes (Public - No Auth Required)
+// ============================================
+
+Route::prefix('webhook')->group(function () {
+    Route::post('/fayko', [WebhookController::class, 'fayko']);
+});
+
+// ============================================
 // Protected Routes (Requires Sanctum Token)
 // ============================================
 
@@ -68,8 +77,10 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/account/orders/{id}', [AccountController::class, 'orderDetail']);
     Route::get('/account/payments', [AccountController::class, 'payments']);
 
-    // Orders - Create
+    // Orders - Create, Check, Cancel
     Route::post('/orders', [AccountController::class, 'createOrder']);
+    Route::post('/orders/check', [AccountController::class, 'checkOrderStatus']);
+    Route::post('/orders/cancel', [AccountController::class, 'cancelOrder']);
 
     // Cart
     Route::get('/cart', [CartController::class, 'index']);

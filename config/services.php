@@ -31,4 +31,10 @@ return [
         'region' => env('AWS_DEFAULT_REGION', 'us-east-1'),
     ],
 
+    'fayko' => [
+        'public_key' => env('FAYKO_PUBLIC_KEY'),
+        'secret_key' => env('FAYKO_SECRET_KEY'),
+        'webhook_key' => env('FAYKO_WEBHOOK_KEY'),
+    ],
+
 ];
