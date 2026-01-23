@@ -146,4 +146,12 @@ Route::middleware('auth:sanctum')->prefix('admin')->group(function () {
     // AppInfo Management
     Route::get('/app-info', [AdminController::class, 'getAppInfo']);
     Route::post('/app-info', [AdminController::class, 'updateAppInfo']);
+    
+    // Synchronization Management
+    Route::get('/synchronizations', [AdminController::class, 'getSynchronizations']);
+    Route::post('/synchronizations/run', [AdminController::class, 'runSync']);
+    Route::post('/synchronizations/apply', [AdminController::class, 'applySyncToLocal']);
+    Route::post('/synchronizations/mark-synced', [AdminController::class, 'markAsSynced']);
+    Route::delete('/synchronizations', [AdminController::class, 'deleteSyncEntries']);
+    Route::delete('/synchronizations/{id}', [AdminController::class, 'deleteSyncEntry']);
 });

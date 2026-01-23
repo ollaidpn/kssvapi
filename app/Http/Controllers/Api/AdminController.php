@@ -15,8 +15,10 @@ use App\Models\PromoCode;
 use App\Models\LocalCategory;
 use App\Models\Brand;
 use App\Models\Item;
+use App\Models\Synchronization;
 use App\Helpers\Shortcut;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
 
 class AdminController extends Controller
@@ -1485,6 +1487,453 @@ class AdminController extends Controller
             return response()->json(['success' => true, 'message' => 'Article supprimé']);
         } catch (\Exception $e) {
             Log::error('API Admin: Erreur suppression article', ['error' => $e->getMessage()]);
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
+        }
+    }
+
+    // ============================================
+    // Synchronization Management
+    // ============================================
+
+    /**
+     * GET /api/admin/synchronizations
+     * Liste paginée des entrées de synchronisation avec statistiques
+     */
+    public function getSynchronizations(Request $request): JsonResponse
+    {
+        try {
+            Log::info('API Admin: Chargement synchronizations', [
+                'admin_id' => $request->user()?->id,
+                'type' => $request->get('type'),
+                'status' => $request->get('status')
+            ]);
+
+            $query = Synchronization::query();
+
+            // Filtres
+            if ($request->type && $request->type !== 'all') {
+                $query->where('type', $request->type);
+            }
+            if ($request->status && $request->status !== 'all') {
+                $query->where('status', $request->status);
+            }
+            if ($request->search) {
+                $query->where(function($q) use ($request) {
+                    $q->where('type_id', 'like', "%{$request->search}%")
+                      ->orWhere('data', 'like', "%{$request->search}%");
+                });
+            }
+
+            // Stats globales
+            $stats = [
+                'total' => Synchronization::count(),
+                'unsync' => Synchronization::where('status', 'unsync')->count(),
+                'synced' => Synchronization::where('status', 'synced')->count(),
+                'changed' => Synchronization::where('status', 'changed')->count(),
+                'error' => Synchronization::where('status', 'error')->count(),
+                'items' => Synchronization::where('type', 'item')->count(),
+                'categories' => Synchronization::where('type', 'category')->count(),
+            ];
+
+            $perPage = $request->get('per_page', 50);
+            $synchronizations = $query->orderBy('updated_at', 'desc')->paginate($perPage);
+
+            // Formater pour le frontend
+            $formatted = $synchronizations->getCollection()->map(function($sync) {
+                $name = 'Sans nom';
+                if ($sync->type === 'item') {
+                    $name = $sync->data['nom'] ?? $sync->data['libelle'] ?? 'Sans nom';
+                } elseif ($sync->type === 'category') {
+                    $name = $sync->data['nom'] ?? 'Sans nom';
+                }
+
+                return [
+                    'id' => $sync->id,
+                    'type' => $sync->type,
+                    'type_id' => $sync->type_id,
+                    'name' => $name,
+                    'status' => $sync->status,
+                    'data' => $sync->data,
+                    'created_at' => $sync->created_at?->format('Y-m-d H:i'),
+                    'updated_at' => $sync->updated_at?->format('Y-m-d H:i'),
+                    'last_sync_at' => $sync->last_sync_at?->format('Y-m-d H:i'),
+                    'last_updated_at' => $sync->last_updated_at?->format('Y-m-d H:i'),
+                ];
+            });
+
+            return response()->json([
+                'success' => true,
+                'data' => $formatted,
+                'stats' => $stats,
+                'meta' => [
+                    'current_page' => $synchronizations->currentPage(),
+                    'last_page' => $synchronizations->lastPage(),
+                    'per_page' => $synchronizations->perPage(),
+                    'total' => $synchronizations->total(),
+                ],
+            ]);
+        } catch (\Exception $e) {
+            Log::error('API Admin: Erreur liste synchronizations', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * POST /api/admin/synchronizations/run
+     * Lance la synchronisation manuelle depuis l'API HomeIP
+     */
+    public function runSync(Request $request): JsonResponse
+    {
+        try {
+            $type = $request->get('type', 'all'); // 'all', 'items', 'categories'
+            $results = ['items' => 0, 'categories' => 0, 'errors' => []];
+
+            Log::info('API Admin: Lancement synchronisation', [
+                'admin_id' => $request->user()?->id,
+                'type' => $type
+            ]);
+
+            if ($type === 'all' || $type === 'items') {
+                $results['items'] = $this->syncItems($results['errors']);
+            }
+            if ($type === 'all' || $type === 'categories') {
+                $results['categories'] = $this->syncCategories($results['errors']);
+            }
+
+            Log::info('API Admin: Synchronisation terminée', $results);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Synchronisation terminée',
+                'results' => $results
+            ]);
+        } catch (\Exception $e) {
+            Log::error('API Admin: Erreur synchronisation', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            return response()->json([
+                'success' => false,
+                'message' => 'Erreur: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Synchronise les articles depuis HomeIP
+     */
+    private function syncItems(array &$errors): int
+    {
+        $count = 0;
+        $pageStart = 0;
+        $pageSize = 200;
+        $maxPages = 50; // Limite pour éviter boucle infinie
+
+        for ($page = 0; $page < $maxPages; $page++) {
+            try {
+                $response = Http::timeout(30)->get("https://kssvapi.homeip.net/shop/produit", [
+                    'PAGE_START' => $pageStart,
+                    'PAGE_NBLIGNE' => $pageSize
+                ]);
+
+                if (!$response->successful()) {
+                    $errors[] = "Erreur HTTP items page $page: " . $response->status();
+                    break;
+                }
+
+                $data = $response->json();
+
+                if (!isset($data['OK']) || $data['OK'] !== 1) {
+                    $errors[] = "API items retourne OK=0 à la page $page";
+                    break;
+                }
+
+                // Gestion du cas où Contenue est un array vide
+                if (!isset($data['Contenue']) || is_array($data['Contenue']) && empty($data['Contenue'])) {
+                    break;
+                }
+
+                $liste = $data['Contenue']['liste'] ?? [];
+                if (empty($liste)) {
+                    break;
+                }
+
+                foreach ($liste as $item) {
+                    if (!isset($item['id'])) continue;
+                    $this->upsertSync('item', (string)$item['id'], $item);
+                    $count++;
+                }
+
+                // Si on a moins d'éléments que demandé, on a tout récupéré
+                if (count($liste) < $pageSize) {
+                    break;
+                }
+
+                $pageStart += $pageSize;
+
+            } catch (\Exception $e) {
+                $errors[] = "Exception items page $page: " . $e->getMessage();
+                break;
+            }
+        }
+
+        return $count;
+    }
+
+    /**
+     * Synchronise les catégories depuis HomeIP
+     */
+    private function syncCategories(array &$errors): int
+    {
+        $count = 0;
+
+        try {
+            $response = Http::timeout(30)->get("https://kssvapi.homeip.net/shop/category", [
+                'PAGE_START' => 0,
+                'PAGE_NBLIGNE' => 500
+            ]);
+
+            if (!$response->successful()) {
+                $errors[] = "Erreur HTTP categories: " . $response->status();
+                return 0;
+            }
+
+            $data = $response->json();
+
+            if (!isset($data['OK']) || $data['OK'] !== 1) {
+                $errors[] = "API categories retourne OK=0";
+                return 0;
+            }
+
+            // Gestion du cas où Contenue est un array vide
+            if (!isset($data['Contenue']) || is_array($data['Contenue']) && empty($data['Contenue'])) {
+                return 0;
+            }
+
+            $liste = $data['Contenue']['liste'] ?? [];
+
+            foreach ($liste as $category) {
+                if (!isset($category['id'])) continue;
+                $this->upsertSync('category', (string)$category['id'], $category);
+                $count++;
+            }
+
+        } catch (\Exception $e) {
+            $errors[] = "Exception categories: " . $e->getMessage();
+        }
+
+        return $count;
+    }
+
+    /**
+     * Upsert une entrée de synchronisation
+     */
+    private function upsertSync(string $type, string $typeId, array $data): void
+    {
+        $existing = Synchronization::where('type', $type)
+            ->where('type_id', $typeId)
+            ->first();
+
+        if ($existing) {
+            // Comparer les données pour détecter les changements
+            $oldDataJson = json_encode($existing->data);
+            $newDataJson = json_encode($data);
+            $hasChanged = $oldDataJson !== $newDataJson;
+
+            $existing->update([
+                'data' => $data,
+                'status' => $hasChanged && $existing->status === 'synced' ? 'changed' : $existing->status,
+                'last_sync_at' => now(),
+            ]);
+        } else {
+            Synchronization::create([
+                'type' => $type,
+                'type_id' => $typeId,
+                'data' => $data,
+                'status' => 'unsync',
+                'last_sync_at' => now(),
+            ]);
+        }
+    }
+
+    /**
+     * POST /api/admin/synchronizations/apply
+     * Applique les entrées sélectionnées vers les tables locales
+     */
+    public function applySyncToLocal(Request $request): JsonResponse
+    {
+        try {
+            $ids = $request->get('ids', []);
+            $applied = 0;
+            $errors = [];
+
+            Log::info('API Admin: Application sync vers local', [
+                'admin_id' => $request->user()?->id,
+                'ids_count' => count($ids)
+            ]);
+
+            foreach ($ids as $id) {
+                $sync = Synchronization::find($id);
+                if (!$sync) continue;
+
+                try {
+                    if ($sync->type === 'item') {
+                        $this->applyItemToLocal($sync);
+                    } elseif ($sync->type === 'category') {
+                        $this->applyCategoryToLocal($sync);
+                    }
+
+                    $sync->update(['status' => 'synced']);
+                    $applied++;
+                } catch (\Exception $e) {
+                    $errors[] = "Erreur ID {$id}: " . $e->getMessage();
+                    $sync->update(['status' => 'error']);
+                }
+            }
+
+            return response()->json([
+                'success' => true,
+                'message' => "$applied élément(s) synchronisé(s)",
+                'applied' => $applied,
+                'errors' => $errors
+            ]);
+        } catch (\Exception $e) {
+            Log::error('API Admin: Erreur application sync', [
+                'error' => $e->getMessage()
+            ]);
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * Applique un item synchronisé vers la table locale Item
+     */
+    private function applyItemToLocal(Synchronization $sync): void
+    {
+        $data = $sync->data;
+
+        // Trouver ou créer le brand si disponible
+        $brandId = null;
+        if (!empty($data['marque'])) {
+            $brand = Brand::firstOrCreate(
+                ['name' => $data['marque']],
+                ['logo' => null, 'description' => null]
+            );
+            $brandId = $brand->id;
+        }
+
+        // Trouver ou créer la catégorie locale
+        $categoryId = null;
+        if (!empty($data['id_categorie'])) {
+            $catSync = Synchronization::where('type', 'category')
+                ->where('type_id', (string)$data['id_categorie'])
+                ->first();
+            
+            if ($catSync) {
+                $localCat = LocalCategory::where('name', $catSync->data['nom'] ?? '')->first();
+                if ($localCat) {
+                    $categoryId = $localCat->id;
+                }
+            }
+        }
+
+        // Images
+        $images = [];
+        if (!empty($data['photo'])) {
+            $images[] = $data['photo'];
+        }
+
+        Item::updateOrCreate(
+            ['sku' => $sync->type_id], // Utiliser l'ID HomeIP comme SKU
+            [
+                'name' => $data['nom'] ?? $data['libelle'] ?? 'Sans nom',
+                'description' => $data['description'] ?? null,
+                'price' => (float)($data['prix'] ?? 0),
+                'sale_price' => null,
+                'category_id' => $categoryId,
+                'brand_id' => $brandId,
+                'image' => $data['photo'] ?? null,
+                'images' => $images,
+                'stock' => (int)($data['qte_stock'] ?? 0),
+                'status' => 'active',
+            ]
+        );
+    }
+
+    /**
+     * Applique une catégorie synchronisée vers la table locale LocalCategory
+     */
+    private function applyCategoryToLocal(Synchronization $sync): void
+    {
+        $data = $sync->data;
+
+        LocalCategory::updateOrCreate(
+            ['name' => $data['nom'] ?? 'Sans nom'],
+            [
+                'description' => $data['description'] ?? null,
+                'logo' => $data['ImageURL'] ?? $data['LOGO'] ?? $data['IconURL'] ?? null,
+                'parent_id' => null, // L'API HomeIP n'a pas de hiérarchie
+            ]
+        );
+    }
+
+    /**
+     * POST /api/admin/synchronizations/mark-synced
+     * Marque les entrées comme synchronisées sans les appliquer
+     */
+    public function markAsSynced(Request $request): JsonResponse
+    {
+        try {
+            $ids = $request->get('ids', []);
+            $updated = Synchronization::whereIn('id', $ids)->update(['status' => 'synced']);
+
+            return response()->json([
+                'success' => true,
+                'message' => "$updated élément(s) marqué(s) comme synchronisé(s)"
+            ]);
+        } catch (\Exception $e) {
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * DELETE /api/admin/synchronizations/{id}
+     * Supprimer une entrée de synchronisation
+     */
+    public function deleteSyncEntry(int $id): JsonResponse
+    {
+        try {
+            $sync = Synchronization::find($id);
+            if (!$sync) {
+                return response()->json(['success' => false, 'message' => 'Entrée non trouvée'], 404);
+            }
+
+            $sync->delete();
+
+            return response()->json(['success' => true, 'message' => 'Entrée supprimée']);
+        } catch (\Exception $e) {
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * DELETE /api/admin/synchronizations
+     * Supprimer plusieurs entrées de synchronisation
+     */
+    public function deleteSyncEntries(Request $request): JsonResponse
+    {
+        try {
+            $ids = $request->get('ids', []);
+            $deleted = Synchronization::whereIn('id', $ids)->delete();
+
+            return response()->json([
+                'success' => true,
+                'message' => "$deleted entrée(s) supprimée(s)"
+            ]);
+        } catch (\Exception $e) {
             return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
         }
     }
