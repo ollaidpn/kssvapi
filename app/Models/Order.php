@@ -18,6 +18,9 @@ class Order extends Model
         'user_id',
         'reference',
         'promo_code_id',
+        'address',
+        'city',
+        'payment_method',
     ];
 
     protected $searchableFields = ['*'];

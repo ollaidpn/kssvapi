@@ -544,6 +544,101 @@ class AdminController extends Controller
     }
 
     // ============================================
+    // Payments Management
+    // ============================================
+
+    /**
+     * GET /api/admin/payments
+     * Liste tous les paiements avec filtres
+     */
+    public function getPayments(Request $request): JsonResponse
+    {
+        try {
+            $validated = $request->validate([
+                'search' => 'nullable|string|max:255',
+                'method' => 'nullable|string|in:orange_money,wave,card,cash,all',
+                'page' => 'nullable|integer|min:1',
+                'per_page' => 'nullable|integer|min:1|max:100',
+            ]);
+            
+            Log::info('API Admin: Liste des paiements', [
+                'admin_id' => $request->user()?->id,
+                'filters' => $validated
+            ]);
+            
+            $query = Payment::with(['order.user:id,name']);
+            
+            // Filtre de recherche
+            if (!empty($validated['search'])) {
+                $search = $validated['search'];
+                $query->where(function($q) use ($search) {
+                    $q->where('reference', 'like', "%{$search}%")
+                      ->orWhereHas('order', fn($oq) => 
+                          $oq->where('reference', 'like', "%{$search}%")
+                             ->orWhereHas('user', fn($uq) => 
+                                 $uq->where('name', 'like', "%{$search}%")
+                             )
+                      );
+                });
+            }
+            
+            // Filtre par méthode de paiement
+            if (!empty($validated['method']) && $validated['method'] !== 'all') {
+                $query->where('paid_by', $validated['method']);
+            }
+            
+            // Pagination
+            $perPage = $validated['per_page'] ?? 20;
+            $payments = $query->latest('date')->paginate($perPage);
+            
+            // Total encaissé (tous les paiements, pas filtrés)
+            $totalCompleted = Payment::sum('amount');
+            
+            $formattedPayments = collect($payments->items())->map(fn($p) => [
+                'id' => $p->id,
+                'reference' => $p->reference ?? 'PAY-' . str_pad($p->id, 4, '0', STR_PAD_LEFT),
+                'order_id' => $p->order_id,
+                'order_ref' => $p->order?->reference ?? 'N/A',
+                'client' => $p->order?->user?->name ?? 'Inconnu',
+                'amount' => (float) $p->amount,
+                'method' => $p->paid_by ?? 'cash',
+                'status' => 'completed',
+                'date' => $p->date?->format('Y-m-d H:i'),
+            ]);
+            
+            return response()->json([
+                'success' => true,
+                'data' => [
+                    'payments' => $formattedPayments,
+                    'total_completed' => (float) $totalCompleted,
+                    'pagination' => [
+                        'current_page' => $payments->currentPage(),
+                        'last_page' => $payments->lastPage(),
+                        'per_page' => $payments->perPage(),
+                        'total' => $payments->total(),
+                    ],
+                ],
+            ]);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            Log::warning('API Admin: Validation error payments', ['errors' => $e->errors()]);
+            return response()->json([
+                'success' => false,
+                'message' => 'Données invalides',
+                'errors' => $e->errors(),
+            ], 422);
+        } catch (\Exception $e) {
+            Log::error('API Admin: Erreur liste paiements', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            return response()->json([
+                'success' => false,
+                'message' => 'Erreur lors de la récupération des paiements',
+            ], 500);
+        }
+    }
+
+    // ============================================
     // Sections Management
     // ============================================
 

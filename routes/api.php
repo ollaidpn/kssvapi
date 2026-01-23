@@ -68,6 +68,9 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/account/orders/{id}', [AccountController::class, 'orderDetail']);
     Route::get('/account/payments', [AccountController::class, 'payments']);
 
+    // Orders - Create
+    Route::post('/orders', [AccountController::class, 'createOrder']);
+
     // Cart
     Route::get('/cart', [CartController::class, 'index']);
     Route::post('/cart', [CartController::class, 'store']);
@@ -92,6 +95,9 @@ Route::middleware('auth:sanctum')->prefix('admin')->group(function () {
     Route::get('/orders', [AdminController::class, 'getOrders']);
     Route::get('/orders/{id}', [AdminController::class, 'getOrderDetail']);
     Route::put('/orders/{id}/status', [AdminController::class, 'updateOrderStatus']);
+    
+    // Payments Management
+    Route::get('/payments', [AdminController::class, 'getPayments']);
     
     // Sections Management
     Route::get('/sections', [AdminController::class, 'getSections']);

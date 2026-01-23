@@ -2,10 +2,14 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Models\Cart;
+use App\Models\Order;
 use App\Models\Payment;
+use App\Helpers\Shortcut;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use App\Http\Controllers\Controller;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 class AccountController extends Controller
@@ -261,6 +265,100 @@ class AccountController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Erreur lors du chargement des paiements'
+            ], 500);
+        }
+    }
+
+    /**
+     * POST /api/orders
+     * Créer une commande à partir du panier
+     */
+    public function createOrder(Request $request): JsonResponse
+    {
+        try {
+            $validated = $request->validate([
+                'address' => 'required|string|max:255',
+                'city' => 'required|string|max:100',
+                'payment_method' => 'required|string|in:cash_on_delivery',
+            ]);
+            
+            $user = $request->user();
+            Log::info('API Account: Création commande', ['user_id' => $user->id]);
+            
+            // Récupérer les articles du panier
+            $cartItems = Cart::where('user_id', $user->id)
+                ->where('type', 'cart')
+                ->where('status', 'pending')
+                ->get();
+            
+            if ($cartItems->isEmpty()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Votre panier est vide'
+                ], 400);
+            }
+            
+            // Calculer le total
+            $total = $cartItems->sum(fn($item) => $item->price * $item->qty);
+            
+            // Générer référence unique
+            $reference = 'CMD-' . date('Ymd') . '-' . strtoupper(substr(uniqid(), -6));
+            
+            // Créer la commande
+            $order = Order::create([
+                'user_id' => $user->id,
+                'reference' => $reference,
+                'total' => $total,
+                'discount' => 0,
+                'status' => 'pending',
+                'address' => $validated['address'],
+                'city' => $validated['city'],
+                'payment_method' => $validated['payment_method'],
+                'promo_code_id' => null,
+            ]);
+            
+            // Lier les articles du panier à la commande
+            Cart::where('user_id', $user->id)
+                ->where('type', 'cart')
+                ->where('status', 'pending')
+                ->update([
+                    'order_id' => $order->id,
+                    'status' => 'ordered',
+                    'total' => DB::raw('price * qty'),
+                ]);
+            
+            Log::info('API Account: Commande créée', [
+                'user_id' => $user->id,
+                'order_id' => $order->id,
+                'reference' => $reference,
+                'total' => $total,
+                'items_count' => $cartItems->count()
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Commande créée avec succès',
+                'data' => [
+                    'order_id' => $order->id,
+                    'reference' => $order->reference,
+                    'total' => (float) $order->total,
+                ]
+            ], 201);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Données invalides',
+                'errors' => $e->errors()
+            ], 422);
+        } catch (\Exception $e) {
+            Log::error('API Account: Erreur création commande', [
+                'user_id' => $request->user()?->id,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            return response()->json([
+                'success' => false,
+                'message' => 'Erreur lors de la création de la commande'
             ], 500);
         }
     }

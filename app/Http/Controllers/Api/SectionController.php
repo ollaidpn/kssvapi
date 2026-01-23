@@ -4,11 +4,28 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Section;
+use App\Helpers\Shortcut;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 
 class SectionController extends Controller
 {
+    /**
+     * Transforme une section en ajoutant les URLs d'images vérifiées
+     *
+     * @param Section|null $section
+     * @return Section|null
+     */
+    private function transformSection(?Section $section): ?Section
+    {
+        if (!$section) return null;
+        
+        $section->image1 = Shortcut::fileExistsOnServer($section->image1);
+        $section->image2 = Shortcut::fileExistsOnServer($section->image2);
+        
+        return $section;
+    }
+
     /**
      * API générique pour récupérer des sections par type
      * 
@@ -34,7 +51,7 @@ class SectionController extends Controller
             $query = Section::where('type', $type);
 
             if ($mode === 'multiple') {
-                $data = $query->get();
+                $data = $query->get()->map(fn($s) => $this->transformSection($s));
                 Log::debug('API Sections: Sections recuperees (multiple)', ['type' => $type, 'count' => $data->count()]);
                 return response()->json([
                     'success' => true,
@@ -42,7 +59,7 @@ class SectionController extends Controller
                 ]);
             }
 
-            $data = $query->first();
+            $data = $this->transformSection($query->first());
             Log::debug('API Sections: Section recuperee (single)', ['type' => $type, 'found' => $data !== null]);
             
             return response()->json([
@@ -73,9 +90,9 @@ class SectionController extends Controller
             Log::debug('API Sections: Chargement Hero Section');
             
             $data = [
-                'slider' => Section::where('type', 'slider')->get(),
-                'hero1' => Section::where('type', 'hero1')->first(),
-                'hero2' => Section::where('type', 'hero2')->first(),
+                'slider' => Section::where('type', 'slider')->get()->map(fn($s) => $this->transformSection($s)),
+                'hero1' => $this->transformSection(Section::where('type', 'hero1')->first()),
+                'hero2' => $this->transformSection(Section::where('type', 'hero2')->first()),
             ];
             
             Log::info('API Sections: Hero Section charge', [
@@ -112,12 +129,12 @@ class SectionController extends Controller
             Log::debug('API Sections: Chargement Ads Section');
             
             $data = [
-                'ads1' => Section::where('type', 'ads1')->first(),
-                'ads2' => Section::where('type', 'ads2')->first(),
-                'ads3' => Section::where('type', 'ads3')->first(),
-                'ads4' => Section::where('type', 'ads4')->first(),
-                'ads5' => Section::where('type', 'ads5')->first(),
-                'ads6' => Section::where('type', 'ads6')->first(),
+                'ads1' => $this->transformSection(Section::where('type', 'ads1')->first()),
+                'ads2' => $this->transformSection(Section::where('type', 'ads2')->first()),
+                'ads3' => $this->transformSection(Section::where('type', 'ads3')->first()),
+                'ads4' => $this->transformSection(Section::where('type', 'ads4')->first()),
+                'ads5' => $this->transformSection(Section::where('type', 'ads5')->first()),
+                'ads6' => $this->transformSection(Section::where('type', 'ads6')->first()),
             ];
             
             $adsLoaded = collect($data)->filter(fn($ad) => $ad !== null)->count();
