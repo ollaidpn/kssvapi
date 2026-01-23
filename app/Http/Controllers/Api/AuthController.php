@@ -435,6 +435,44 @@ class AuthController extends Controller
     }
 
     /**
+     * Check if token is still valid (polling endpoint for session verification)
+     */
+    public function checkToken(Request $request): JsonResponse
+    {
+        try {
+            $user = $request->user();
+            
+            if (!$user) {
+                Log::debug('API Auth: Token check failed - no user');
+                return response()->json([
+                    'success' => false,
+                    'connected' => false,
+                    'message' => 'Token expiré ou invalide'
+                ], 401);
+            }
+
+            Log::debug('API Auth: Token check success', ['user_id' => $user->id]);
+
+            return response()->json([
+                'success' => true,
+                'connected' => true,
+                'user' => [
+                    'id' => $user->id,
+                    'name' => $user->name,
+                    'account_type' => $user->account_type,
+                ]
+            ]);
+        } catch (\Exception $e) {
+            Log::error('API Auth: Token check error', ['error' => $e->getMessage()]);
+            return response()->json([
+                'success' => false,
+                'connected' => false,
+                'message' => 'Erreur de vérification'
+            ], 500);
+        }
+    }
+
+    /**
      * Logout user (revoke current token)
      */
     public function logout(Request $request): JsonResponse

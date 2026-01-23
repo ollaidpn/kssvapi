@@ -22,6 +22,18 @@ class LocalController extends Controller
             $query = Item::with(['category:id,name', 'brand:id,name'])
                 ->where('status', 'active');
             
+            // Global filter: show only products with valid images
+            $appInfo = \App\Models\AppInfo::first();
+            if ($appInfo && $appInfo->show_only_with_images) {
+                $query->where(function($q) {
+                    $q->whereNotNull('image')
+                      ->where('image', '!=', '')
+                      ->where('image', 'NOT LIKE', '%no-image%')
+                      ->where('image', 'NOT LIKE', '%aucune%')
+                      ->where('image', 'NOT LIKE', '%aucunimage%');
+                });
+            }
+            
             // Filter by category
             if ($request->filled('category_id')) {
                 $query->where('category_id', $request->category_id);
@@ -116,13 +128,26 @@ class LocalController extends Controller
     public function searchProducts(string $query): JsonResponse
     {
         try {
-            $products = Item::with(['category:id,name'])
+            $productQuery = Item::with(['category:id,name'])
                 ->where('status', 'active')
                 ->where(function($q) use ($query) {
                     $q->where('name', 'LIKE', "%{$query}%")
                       ->orWhere('code', 'LIKE', "%{$query}%");
-                })
-                ->orderBy('name')
+                });
+            
+            // Global filter: show only products with valid images
+            $appInfo = \App\Models\AppInfo::first();
+            if ($appInfo && $appInfo->show_only_with_images) {
+                $productQuery->where(function($q) {
+                    $q->whereNotNull('image')
+                      ->where('image', '!=', '')
+                      ->where('image', 'NOT LIKE', '%no-image%')
+                      ->where('image', 'NOT LIKE', '%aucune%')
+                      ->where('image', 'NOT LIKE', '%aucunimage%');
+                });
+            }
+            
+            $products = $productQuery->orderBy('name')
                 ->limit(50)
                 ->get();
             
@@ -215,12 +240,24 @@ class LocalController extends Controller
             $product = Item::findOrFail($productId);
             $limit = $request->get('limit', 10);
             
-            $relatedProducts = Item::with(['category:id,name'])
+            $relatedQuery = Item::with(['category:id,name'])
                 ->where('status', 'active')
                 ->where('category_id', $product->category_id)
-                ->where('id', '!=', $productId)
-                ->limit($limit)
-                ->get();
+                ->where('id', '!=', $productId);
+            
+            // Global filter: show only products with valid images
+            $appInfo = \App\Models\AppInfo::first();
+            if ($appInfo && $appInfo->show_only_with_images) {
+                $relatedQuery->where(function($q) {
+                    $q->whereNotNull('image')
+                      ->where('image', '!=', '')
+                      ->where('image', 'NOT LIKE', '%no-image%')
+                      ->where('image', 'NOT LIKE', '%aucune%')
+                      ->where('image', 'NOT LIKE', '%aucunimage%');
+                });
+            }
+            
+            $relatedProducts = $relatedQuery->limit($limit)->get();
             
             $transformedProducts = $relatedProducts->map(function ($item) {
                 return $this->transformProduct($item);

@@ -27,6 +27,7 @@ class AppInfo extends Model
         'town',
         'country',
         'maintenance',
+        'show_only_with_images',
     ];
 
     protected $searchableFields = ['*'];
@@ -35,5 +36,6 @@ class AppInfo extends Model
 
     protected $casts = [
         'maintenance' => 'boolean',
+        'show_only_with_images' => 'boolean',
     ];
 }

@@ -14,6 +14,7 @@ class Brand extends Model
 
     protected $fillable = [
         'sync_id',
+        'og_id',
         'name',
         'logo',
         'original_logo',

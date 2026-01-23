@@ -13,6 +13,7 @@ class Item extends Model
 
     protected $fillable = [
         'sync_id',
+        'og_id',
         'name',
         'code',
         'description',

@@ -877,7 +877,7 @@ class AdminController extends Controller
             $appInfo->fill($request->only([
                 'name', 'ccphone1', 'phone1', 'ccphone2', 'phone2',
                 'email1', 'email2', 'latitude', 'longitude',
-                'address', 'town', 'country', 'maintenance'
+                'address', 'town', 'country', 'maintenance', 'show_only_with_images'
             ]));
             
             // Upload logo_color
@@ -916,6 +916,39 @@ class AdminController extends Controller
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString()
             ]);
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * POST /api/admin/app-info/toggle-image-filter
+     * Toggle le filtre des images
+     */
+    public function toggleImageFilter(Request $request): JsonResponse
+    {
+        try {
+            $appInfo = AppInfo::first();
+            if (!$appInfo) {
+                $appInfo = AppInfo::create(['name' => 'KSSV', 'show_only_with_images' => false]);
+            }
+            
+            $appInfo->update([
+                'show_only_with_images' => $request->boolean('enabled')
+            ]);
+            
+            Log::info('API Admin: Toggle image filter', [
+                'enabled' => $appInfo->show_only_with_images
+            ]);
+            
+            return response()->json([
+                'success' => true,
+                'show_only_with_images' => $appInfo->show_only_with_images,
+                'message' => $appInfo->show_only_with_images 
+                    ? 'Seuls les articles avec image seront affichés'
+                    : 'Tous les articles seront affichés'
+            ]);
+        } catch (\Exception $e) {
+            Log::error('API Admin: Erreur toggle image filter', ['error' => $e->getMessage()]);
             return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
         }
     }
@@ -1816,18 +1849,16 @@ class AdminController extends Controller
         $data = $sync->data;
         $imageService = new \App\Services\ImageDownloadService();
 
-        // Trouver la catégorie locale via sync_id
+        // L'ID original de HomeIP (type_id dans synchronizations)
+        $ogId = $sync->type_id;
+
+        // Trouver la catégorie locale via og_id
         $categoryId = null;
         if (!empty($data['id_categorie'])) {
-            $catSync = Synchronization::where('type', 'category')
-                ->where('type_id', (string)$data['id_categorie'])
-                ->first();
-            
-            if ($catSync) {
-                $localCat = LocalCategory::where('sync_id', $catSync->id)->first();
-                if ($localCat) {
-                    $categoryId = $localCat->id;
-                }
+            // Chercher la catégorie locale par son og_id (plus robuste)
+            $localCat = LocalCategory::where('og_id', (string)$data['id_categorie'])->first();
+            if ($localCat) {
+                $categoryId = $localCat->id;
             }
         }
 
@@ -1848,10 +1879,11 @@ class AdminController extends Controller
             $localImages = $imageService->downloadImages($gallery, 'items/gallery');
         }
 
-        // Créer ou mettre à jour l'item local via sync_id
+        // Créer ou mettre à jour l'item local via og_id (évite les doublons)
         Item::updateOrCreate(
-            ['sync_id' => $sync->id],
+            ['og_id' => $ogId],
             [
+                'sync_id' => $sync->id,
                 'name' => $data['nom'] ?? $data['libelle'] ?? 'Sans nom',
                 'code' => $data['code'] ?? null,
                 'description' => null,
@@ -1876,6 +1908,9 @@ class AdminController extends Controller
         $data = $sync->data;
         $imageService = new \App\Services\ImageDownloadService();
 
+        // L'ID original de HomeIP
+        $ogId = $sync->type_id;
+
         // Télécharger le logo (retourne null si placeholder)
         $originalLogo = $data['ImageURL'] ?? $data['LOGO'] ?? $data['IconURL'] ?? null;
         $localLogo = null;
@@ -1886,10 +1921,11 @@ class AdminController extends Controller
         // Si pas de logo local valide, utiliser no-image.png
         $finalLogo = $localLogo ?? 'no-image.png';
 
-        // Créer ou mettre à jour la catégorie via sync_id
+        // Créer ou mettre à jour la catégorie via og_id (évite les doublons)
         LocalCategory::updateOrCreate(
-            ['sync_id' => $sync->id],
+            ['og_id' => $ogId],
             [
+                'sync_id' => $sync->id,
                 'name' => $data['nom'] ?? 'Sans nom',
                 'original_logo' => $originalLogo,
                 'logo' => $finalLogo,

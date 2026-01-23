@@ -93,6 +93,7 @@ Route::prefix('webhook')->group(function () {
 
 Route::middleware('auth:sanctum')->group(function () {
     // Auth
+    Route::get('/auth/check', [AuthController::class, 'checkToken']);
     Route::get('/auth/me', [AuthController::class, 'me']);
     Route::post('/auth/logout', [AuthController::class, 'logout']);
     Route::put('/auth/profile', [AuthController::class, 'updateProfile']);
@@ -173,6 +174,7 @@ Route::middleware('auth:sanctum')->prefix('admin')->group(function () {
     // AppInfo Management
     Route::get('/app-info', [AdminController::class, 'getAppInfo']);
     Route::post('/app-info', [AdminController::class, 'updateAppInfo']);
+    Route::post('/app-info/toggle-image-filter', [AdminController::class, 'toggleImageFilter']);
     
     // Synchronization Management
     Route::get('/synchronizations', [AdminController::class, 'getSynchronizations']);

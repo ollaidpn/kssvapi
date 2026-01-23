@@ -118,7 +118,7 @@ class SectionController extends Controller
     }
 
     /**
-     * API combinée pour récupérer toutes les publicités (ads1 à ads6)
+     * API combinée pour récupérer toutes les publicités (ads1 à ads7)
      * UN SEUL appel API pour toutes les pubs
      * 
      * @return \Illuminate\Http\JsonResponse
@@ -135,6 +135,7 @@ class SectionController extends Controller
                 'ads4' => $this->transformSection(Section::where('type', 'ads4')->first()),
                 'ads5' => $this->transformSection(Section::where('type', 'ads5')->first()),
                 'ads6' => $this->transformSection(Section::where('type', 'ads6')->first()),
+                'ads7' => $this->transformSection(Section::where('type', 'ads7')->first()),
             ];
             
             $adsLoaded = collect($data)->filter(fn($ad) => $ad !== null)->count();
