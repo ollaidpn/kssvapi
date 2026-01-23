@@ -351,15 +351,25 @@ class AccountController extends Controller
             if (in_array($paymentMethod, ['wave_senegal', 'orange_money_senegal'])) {
                 $faykoService = new FaykoPaymentService();
                 
+                // Calculer le nombre total d'articles
+                $totalQty = $cartItems->sum('quantity');
+                
                 $paymentResult = $faykoService->makePayment([
                     'payment_method' => $paymentMethod,
                     'amount' => $total,
-                    'currency' => 'XOF',
+                    'qty' => $totalQty,
+                    'client_name' => $user->name ?? 'Client',
+                    'name' => 'Commande ' . $reference,
+                    'description' => 'Commande de ' . $cartItems->count() . ' article(s) sur KSSV',
+                    'ccphone' => '+221',
+                    'phone' => $user->phone ?? '',
                     'extra_data' => [
+                        'origin' => 'kssv',
                         'order_reference' => $reference,
                         'user_id' => $user->id,
                     ],
-                    'webhook_url' => config('app.url') . '/api/webhook/fayko',
+                    'error_url' => config('app.frontend_url', 'https://id-preview--530ec94f-163a-42dd-8628-1ce9b9206e7c.lovable.app'),
+                    'success_url' => config('app.frontend_url', 'https://id-preview--530ec94f-163a-42dd-8628-1ce9b9206e7c.lovable.app') . '/checkout/success',
                 ]);
                 
                 if (!$paymentResult['success']) {

@@ -9,12 +9,14 @@ class FaykoPaymentService
 {
     private string $publicKey;
     private string $secretKey;
+    private string $webhookKey;
     private string $baseUrl = 'https://fayko.sn/api/v1';
 
     public function __construct()
     {
         $this->publicKey = config('services.fayko.public_key');
         $this->secretKey = config('services.fayko.secret_key');
+        $this->webhookKey = config('services.fayko.webhook_key');
     }
 
     /**
@@ -28,26 +30,43 @@ class FaykoPaymentService
         try {
             Log::info('FaykoPaymentService: Initialisation paiement', [
                 'amount' => $payload['amount'] ?? null,
+                'qty' => $payload['qty'] ?? 1,
                 'payment_method' => $payload['payment_method'] ?? null,
                 'order_reference' => $payload['extra_data']['order_reference'] ?? null,
             ]);
 
+            // Mapper le moyen de paiement au format Fayko
+            $paidBy = $this->mapPaymentMethod($payload['payment_method'] ?? 'wave');
+
+            $requestBody = [
+                'client_name' => $payload['client_name'] ?? 'Client',
+                'name'        => $payload['name'] ?? 'Commande',
+                'description' => $payload['description'] ?? 'Achat sur KSSV',
+                'amount'      => (int) $payload['amount'],
+                'qty'         => (int) ($payload['qty'] ?? 1),
+                'paid_by'     => $paidBy,
+                'ccphone'     => $payload['ccphone'] ?? '+221',
+                'phone'       => $payload['phone'] ?? '',
+                'error_url'   => $payload['error_url'] ?? config('app.url'),
+                'success_url' => $payload['success_url'] ?? config('app.url'),
+                'extra_data'  => json_encode($payload['extra_data'] ?? []),
+            ];
+
+            Log::info('FaykoPaymentService: Request body', $requestBody);
+
             $response = Http::withHeaders([
-                'Authorization' => 'Bearer ' . $this->secretKey,
-                'Content-Type' => 'application/json',
-                'Accept' => 'application/json',
-            ])->post($this->baseUrl . '/checkouts/make', [
-                'public_key' => $this->publicKey,
-                'payment_method' => $payload['payment_method'],
-                'amount' => $payload['amount'],
-                'currency' => $payload['currency'] ?? 'XOF',
-                'extra_data' => json_encode($payload['extra_data'] ?? []),
-                'webhook_url' => $payload['webhook_url'] ?? config('app.url') . '/api/webhook/fayko',
-                'success_url' => $payload['success_url'] ?? null,
-                'failure_url' => $payload['failure_url'] ?? null,
-            ]);
+                'public-key'   => $this->publicKey,
+                'secret-key'   => $this->secretKey,
+                'webhook-key'  => $this->webhookKey,
+                'content-type' => 'application/json',
+            ])->post($this->baseUrl . '/checkouts/make', $requestBody);
 
             $data = $response->json();
+
+            Log::info('FaykoPaymentService: Response', [
+                'status' => $response->status(),
+                'response' => $data,
+            ]);
 
             if ($response->successful() && isset($data['payment_link'])) {
                 Log::info('FaykoPaymentService: Paiement initié avec succès', [
@@ -70,7 +89,7 @@ class FaykoPaymentService
 
             return [
                 'success' => false,
-                'message' => $data['message'] ?? 'Erreur lors de l\'initialisation du paiement',
+                'message' => $data['message'] ?? $data['error'] ?? 'Erreur lors de l\'initialisation du paiement',
             ];
         } catch (\Exception $e) {
             Log::error('FaykoPaymentService: Exception', [
@@ -83,5 +102,20 @@ class FaykoPaymentService
                 'message' => 'Erreur de connexion au service de paiement',
             ];
         }
+    }
+
+    /**
+     * Convertir le nom du moyen de paiement en format Fayko
+     *
+     * @param string $method
+     * @return string
+     */
+    private function mapPaymentMethod(string $method): string
+    {
+        return match($method) {
+            'wave_senegal' => 'wave',
+            'orange_money_senegal' => 'orange_money',
+            default => $method
+        };
     }
 }
