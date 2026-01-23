@@ -11,6 +11,10 @@ use App\Models\Cart;
 use App\Models\Payment;
 use App\Models\Section;
 use App\Models\AppInfo;
+use App\Models\PromoCode;
+use App\Models\LocalCategory;
+use App\Models\Brand;
+use App\Models\Item;
 use App\Helpers\Shortcut;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
@@ -910,6 +914,577 @@ class AdminController extends Controller
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString()
             ]);
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
+        }
+    }
+
+    // ============================================
+    // Promo Codes Management
+    // ============================================
+
+    /**
+     * GET /api/admin/promo-codes
+     * Liste des codes promo
+     */
+    public function getPromoCodes(Request $request): JsonResponse
+    {
+        try {
+            Log::info('API Admin: Liste codes promo', ['admin_id' => $request->user()?->id]);
+            
+            $promoCodes = PromoCode::latest()->get();
+            
+            return response()->json([
+                'success' => true,
+                'data' => $promoCodes
+            ]);
+        } catch (\Exception $e) {
+            Log::error('API Admin: Erreur liste codes promo', [
+                'error' => $e->getMessage()
+            ]);
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * POST /api/admin/promo-codes
+     * Créer un code promo
+     */
+    public function createPromoCode(Request $request): JsonResponse
+    {
+        try {
+            $validated = $request->validate([
+                'code' => 'required|string|unique:promo_codes,code',
+                'discount_by' => 'required|string|in:amount,percent',
+                'discount_value' => 'required|numeric|min:0',
+                'filter_by' => 'nullable|string',
+                'limite' => 'nullable|integer',
+                'expiration' => 'nullable|date',
+                'status' => 'nullable|string|in:active,inactive',
+                'message' => 'nullable|string',
+            ]);
+            
+            Log::info('API Admin: Création code promo', [
+                'admin_id' => $request->user()?->id,
+                'code' => $validated['code']
+            ]);
+            
+            $promoCode = PromoCode::create([
+                'code' => strtoupper($validated['code']),
+                'discount_by' => $validated['discount_by'],
+                'discount_value' => $validated['discount_value'],
+                'filter_by' => $validated['filter_by'] ?? 'date',
+                'limite' => $validated['limite'] ?? -1,
+                'expiration' => $validated['expiration'] ?? null,
+                'status' => $validated['status'] ?? 'active',
+                'message' => $validated['message'] ?? null,
+            ]);
+            
+            return response()->json([
+                'success' => true,
+                'message' => 'Code promo créé',
+                'data' => $promoCode
+            ], 201);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Ce code existe déjà',
+                'errors' => $e->errors()
+            ], 422);
+        } catch (\Exception $e) {
+            Log::error('API Admin: Erreur création code promo', [
+                'error' => $e->getMessage()
+            ]);
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * PUT /api/admin/promo-codes/{id}
+     * Modifier un code promo
+     */
+    public function updatePromoCode(Request $request, int $id): JsonResponse
+    {
+        try {
+            $promoCode = PromoCode::find($id);
+            
+            if (!$promoCode) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Code promo non trouvé'
+                ], 404);
+            }
+            
+            $validated = $request->validate([
+                'code' => 'sometimes|string|unique:promo_codes,code,' . $id,
+                'discount_by' => 'sometimes|string|in:amount,percent',
+                'discount_value' => 'sometimes|numeric|min:0',
+                'filter_by' => 'nullable|string',
+                'limite' => 'nullable|integer',
+                'expiration' => 'nullable|date',
+                'status' => 'nullable|string|in:active,inactive',
+                'message' => 'nullable|string',
+            ]);
+            
+            Log::info('API Admin: Modification code promo', [
+                'admin_id' => $request->user()?->id,
+                'promo_id' => $id
+            ]);
+            
+            if (isset($validated['code'])) {
+                $validated['code'] = strtoupper($validated['code']);
+            }
+            
+            $promoCode->update($validated);
+            
+            return response()->json([
+                'success' => true,
+                'message' => 'Code promo modifié',
+                'data' => $promoCode->fresh()
+            ]);
+        } catch (\Exception $e) {
+            Log::error('API Admin: Erreur modification code promo', [
+                'error' => $e->getMessage()
+            ]);
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * DELETE /api/admin/promo-codes/{id}
+     * Supprimer un code promo
+     */
+    public function deletePromoCode(int $id): JsonResponse
+    {
+        try {
+            $promoCode = PromoCode::find($id);
+            
+            if (!$promoCode) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Code promo non trouvé'
+                ], 404);
+            }
+            
+            // Vérifier si le code est utilisé
+            $usageCount = Order::where('promo_code_id', $id)->count();
+            if ($usageCount > 0) {
+                return response()->json([
+                    'success' => false,
+                    'message' => "Ce code a été utilisé $usageCount fois et ne peut pas être supprimé"
+                ], 400);
+            }
+            
+            Log::info('API Admin: Suppression code promo', ['promo_id' => $id]);
+            
+            $promoCode->delete();
+            
+            return response()->json([
+                'success' => true,
+                'message' => 'Code promo supprimé'
+            ]);
+        } catch (\Exception $e) {
+            Log::error('API Admin: Erreur suppression code promo', [
+                'error' => $e->getMessage()
+            ]);
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
+        }
+    }
+
+    // ============================================
+    // Local Categories Management
+    // ============================================
+
+    /**
+     * GET /api/admin/local-categories
+     * Liste des catégories locales
+     */
+    public function getLocalCategories(Request $request): JsonResponse
+    {
+        try {
+            $categories = LocalCategory::withCount('items')
+                ->orderBy('name')
+                ->get()
+                ->map(function ($cat) {
+                    return [
+                        'id' => $cat->id,
+                        'name' => $cat->name,
+                        'logo' => $cat->logo ? Shortcut::fileExistsOnServer($cat->logo) : null,
+                        'parent_id' => $cat->parent_id,
+                        'items_count' => $cat->items_count,
+                        'created_at' => $cat->created_at?->format('Y-m-d H:i:s'),
+                    ];
+                });
+
+            return response()->json(['success' => true, 'data' => $categories]);
+        } catch (\Exception $e) {
+            Log::error('API Admin: Erreur récupération catégories', ['error' => $e->getMessage()]);
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * POST /api/admin/local-categories
+     * Créer une catégorie
+     */
+    public function createLocalCategory(Request $request): JsonResponse
+    {
+        try {
+            $validated = $request->validate([
+                'name' => 'required|string|max:255',
+                'logo' => 'nullable|string',
+                'parent_id' => 'nullable|integer|exists:local_categories,id',
+            ]);
+
+            $category = LocalCategory::create($validated);
+
+            Log::info('API Admin: Catégorie créée', ['category_id' => $category->id]);
+
+            return response()->json([
+                'success' => true,
+                'data' => $category,
+                'message' => 'Catégorie créée avec succès'
+            ]);
+        } catch (\Exception $e) {
+            Log::error('API Admin: Erreur création catégorie', ['error' => $e->getMessage()]);
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * PUT /api/admin/local-categories/{id}
+     * Modifier une catégorie
+     */
+    public function updateLocalCategory(Request $request, int $id): JsonResponse
+    {
+        try {
+            $category = LocalCategory::find($id);
+            if (!$category) {
+                return response()->json(['success' => false, 'message' => 'Catégorie non trouvée'], 404);
+            }
+
+            $validated = $request->validate([
+                'name' => 'required|string|max:255',
+                'logo' => 'nullable|string',
+                'parent_id' => 'nullable|integer|exists:local_categories,id',
+            ]);
+
+            // Éviter auto-référence
+            if (isset($validated['parent_id']) && $validated['parent_id'] == $id) {
+                return response()->json(['success' => false, 'message' => 'Une catégorie ne peut pas être son propre parent'], 400);
+            }
+
+            $category->update($validated);
+
+            Log::info('API Admin: Catégorie modifiée', ['category_id' => $id]);
+
+            return response()->json([
+                'success' => true,
+                'data' => $category,
+                'message' => 'Catégorie modifiée avec succès'
+            ]);
+        } catch (\Exception $e) {
+            Log::error('API Admin: Erreur modification catégorie', ['error' => $e->getMessage()]);
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * DELETE /api/admin/local-categories/{id}
+     * Supprimer une catégorie
+     */
+    public function deleteLocalCategory(int $id): JsonResponse
+    {
+        try {
+            $category = LocalCategory::find($id);
+            if (!$category) {
+                return response()->json(['success' => false, 'message' => 'Catégorie non trouvée'], 404);
+            }
+
+            Log::info('API Admin: Suppression catégorie', ['category_id' => $id]);
+            $category->delete();
+
+            return response()->json(['success' => true, 'message' => 'Catégorie supprimée']);
+        } catch (\Exception $e) {
+            Log::error('API Admin: Erreur suppression catégorie', ['error' => $e->getMessage()]);
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
+        }
+    }
+
+    // ============================================
+    // Brands Management
+    // ============================================
+
+    /**
+     * GET /api/admin/brands
+     * Liste des marques
+     */
+    public function getBrands(Request $request): JsonResponse
+    {
+        try {
+            $brands = Brand::withCount('items')
+                ->orderBy('name')
+                ->get()
+                ->map(function ($brand) {
+                    return [
+                        'id' => $brand->id,
+                        'name' => $brand->name,
+                        'logo' => $brand->logo ? Shortcut::fileExistsOnServer($brand->logo) : null,
+                        'items_count' => $brand->items_count,
+                        'created_at' => $brand->created_at?->format('Y-m-d H:i:s'),
+                    ];
+                });
+
+            return response()->json(['success' => true, 'data' => $brands]);
+        } catch (\Exception $e) {
+            Log::error('API Admin: Erreur récupération marques', ['error' => $e->getMessage()]);
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * POST /api/admin/brands
+     * Créer une marque
+     */
+    public function createBrand(Request $request): JsonResponse
+    {
+        try {
+            $validated = $request->validate([
+                'name' => 'required|string|max:255',
+                'logo' => 'nullable|string',
+            ]);
+
+            $brand = Brand::create($validated);
+
+            Log::info('API Admin: Marque créée', ['brand_id' => $brand->id]);
+
+            return response()->json([
+                'success' => true,
+                'data' => $brand,
+                'message' => 'Marque créée avec succès'
+            ]);
+        } catch (\Exception $e) {
+            Log::error('API Admin: Erreur création marque', ['error' => $e->getMessage()]);
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * PUT /api/admin/brands/{id}
+     * Modifier une marque
+     */
+    public function updateBrand(Request $request, int $id): JsonResponse
+    {
+        try {
+            $brand = Brand::find($id);
+            if (!$brand) {
+                return response()->json(['success' => false, 'message' => 'Marque non trouvée'], 404);
+            }
+
+            $validated = $request->validate([
+                'name' => 'required|string|max:255',
+                'logo' => 'nullable|string',
+            ]);
+
+            $brand->update($validated);
+
+            Log::info('API Admin: Marque modifiée', ['brand_id' => $id]);
+
+            return response()->json([
+                'success' => true,
+                'data' => $brand,
+                'message' => 'Marque modifiée avec succès'
+            ]);
+        } catch (\Exception $e) {
+            Log::error('API Admin: Erreur modification marque', ['error' => $e->getMessage()]);
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * DELETE /api/admin/brands/{id}
+     * Supprimer une marque
+     */
+    public function deleteBrand(int $id): JsonResponse
+    {
+        try {
+            $brand = Brand::find($id);
+            if (!$brand) {
+                return response()->json(['success' => false, 'message' => 'Marque non trouvée'], 404);
+            }
+
+            Log::info('API Admin: Suppression marque', ['brand_id' => $id]);
+            $brand->delete();
+
+            return response()->json(['success' => true, 'message' => 'Marque supprimée']);
+        } catch (\Exception $e) {
+            Log::error('API Admin: Erreur suppression marque', ['error' => $e->getMessage()]);
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
+        }
+    }
+
+    // ============================================
+    // Items (Inventory) Management
+    // ============================================
+
+    /**
+     * GET /api/admin/items
+     * Liste des articles avec pagination et filtres
+     */
+    public function getItems(Request $request): JsonResponse
+    {
+        try {
+            $query = Item::with(['category:id,name', 'brand:id,name']);
+
+            // Recherche
+            if ($request->filled('search')) {
+                $search = $request->search;
+                $query->where(function ($q) use ($search) {
+                    $q->where('name', 'like', "%{$search}%")
+                      ->orWhere('description', 'like', "%{$search}%");
+                });
+            }
+
+            // Filtres
+            if ($request->filled('category_id')) {
+                $query->where('category_id', $request->category_id);
+            }
+            if ($request->filled('brand_id')) {
+                $query->where('brand_id', $request->brand_id);
+            }
+            if ($request->filled('status')) {
+                $query->where('status', $request->status);
+            }
+
+            $perPage = $request->input('per_page', 20);
+            $items = $query->orderBy('created_at', 'desc')->paginate($perPage);
+
+            $data = $items->map(function ($item) {
+                return [
+                    'id' => $item->id,
+                    'name' => $item->name,
+                    'description' => $item->description,
+                    'price' => (float) $item->price,
+                    'sale_price' => $item->sale_price ? (float) $item->sale_price : null,
+                    'category_id' => $item->category_id,
+                    'brand_id' => $item->brand_id,
+                    'category' => $item->category ? ['id' => $item->category->id, 'name' => $item->category->name] : null,
+                    'brand' => $item->brand ? ['id' => $item->brand->id, 'name' => $item->brand->name] : null,
+                    'image' => $item->image ? Shortcut::fileExistsOnServer($item->image) : null,
+                    'images' => $item->images,
+                    'status' => $item->status,
+                    'created_at' => $item->created_at?->format('Y-m-d H:i:s'),
+                ];
+            });
+
+            return response()->json([
+                'success' => true,
+                'data' => $data,
+                'meta' => [
+                    'current_page' => $items->currentPage(),
+                    'last_page' => $items->lastPage(),
+                    'per_page' => $items->perPage(),
+                    'total' => $items->total(),
+                ]
+            ]);
+        } catch (\Exception $e) {
+            Log::error('API Admin: Erreur récupération articles', ['error' => $e->getMessage()]);
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * POST /api/admin/items
+     * Créer un article
+     */
+    public function createItem(Request $request): JsonResponse
+    {
+        try {
+            $validated = $request->validate([
+                'name' => 'required|string|max:255',
+                'description' => 'nullable|string',
+                'price' => 'required|numeric|min:0',
+                'sale_price' => 'nullable|numeric|min:0',
+                'category_id' => 'nullable|integer|exists:local_categories,id',
+                'brand_id' => 'nullable|integer|exists:brands,id',
+                'image' => 'nullable|string',
+                'images' => 'nullable|array',
+                'images.*' => 'string',
+                'status' => 'required|string|in:active,draft,archived',
+            ]);
+
+            $item = Item::create($validated);
+
+            Log::info('API Admin: Article créé', ['item_id' => $item->id]);
+
+            return response()->json([
+                'success' => true,
+                'data' => $item,
+                'message' => 'Article créé avec succès'
+            ]);
+        } catch (\Exception $e) {
+            Log::error('API Admin: Erreur création article', ['error' => $e->getMessage()]);
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * PUT /api/admin/items/{id}
+     * Modifier un article
+     */
+    public function updateItem(Request $request, int $id): JsonResponse
+    {
+        try {
+            $item = Item::find($id);
+            if (!$item) {
+                return response()->json(['success' => false, 'message' => 'Article non trouvé'], 404);
+            }
+
+            $validated = $request->validate([
+                'name' => 'required|string|max:255',
+                'description' => 'nullable|string',
+                'price' => 'required|numeric|min:0',
+                'sale_price' => 'nullable|numeric|min:0',
+                'category_id' => 'nullable|integer|exists:local_categories,id',
+                'brand_id' => 'nullable|integer|exists:brands,id',
+                'image' => 'nullable|string',
+                'images' => 'nullable|array',
+                'images.*' => 'string',
+                'status' => 'required|string|in:active,draft,archived',
+            ]);
+
+            $item->update($validated);
+
+            Log::info('API Admin: Article modifié', ['item_id' => $id]);
+
+            return response()->json([
+                'success' => true,
+                'data' => $item->fresh(),
+                'message' => 'Article modifié avec succès'
+            ]);
+        } catch (\Exception $e) {
+            Log::error('API Admin: Erreur modification article', ['error' => $e->getMessage()]);
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * DELETE /api/admin/items/{id}
+     * Supprimer un article
+     */
+    public function deleteItem(int $id): JsonResponse
+    {
+        try {
+            $item = Item::find($id);
+            if (!$item) {
+                return response()->json(['success' => false, 'message' => 'Article non trouvé'], 404);
+            }
+
+            Log::info('API Admin: Suppression article', ['item_id' => $id]);
+            $item->delete();
+
+            return response()->json(['success' => true, 'message' => 'Article supprimé']);
+        } catch (\Exception $e) {
+            Log::error('API Admin: Erreur suppression article', ['error' => $e->getMessage()]);
             return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
         }
     }

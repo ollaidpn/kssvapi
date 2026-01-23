@@ -82,6 +82,9 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/orders/check', [AccountController::class, 'checkOrderStatus']);
     Route::post('/orders/cancel', [AccountController::class, 'cancelOrder']);
 
+    // Promo Codes - Validate
+    Route::post('/promo-codes/validate', [AccountController::class, 'validatePromoCode']);
+
     // Cart
     Route::get('/cart', [CartController::class, 'index']);
     Route::post('/cart', [CartController::class, 'store']);
@@ -109,6 +112,30 @@ Route::middleware('auth:sanctum')->prefix('admin')->group(function () {
     
     // Payments Management
     Route::get('/payments', [AdminController::class, 'getPayments']);
+    
+    // Promo Codes Management
+    Route::get('/promo-codes', [AdminController::class, 'getPromoCodes']);
+    Route::post('/promo-codes', [AdminController::class, 'createPromoCode']);
+    Route::put('/promo-codes/{id}', [AdminController::class, 'updatePromoCode']);
+    Route::delete('/promo-codes/{id}', [AdminController::class, 'deletePromoCode']);
+    
+    // Local Categories Management
+    Route::get('/local-categories', [AdminController::class, 'getLocalCategories']);
+    Route::post('/local-categories', [AdminController::class, 'createLocalCategory']);
+    Route::put('/local-categories/{id}', [AdminController::class, 'updateLocalCategory']);
+    Route::delete('/local-categories/{id}', [AdminController::class, 'deleteLocalCategory']);
+    
+    // Brands Management
+    Route::get('/brands', [AdminController::class, 'getBrands']);
+    Route::post('/brands', [AdminController::class, 'createBrand']);
+    Route::put('/brands/{id}', [AdminController::class, 'updateBrand']);
+    Route::delete('/brands/{id}', [AdminController::class, 'deleteBrand']);
+    
+    // Items (Inventory) Management
+    Route::get('/items', [AdminController::class, 'getItems']);
+    Route::post('/items', [AdminController::class, 'createItem']);
+    Route::put('/items/{id}', [AdminController::class, 'updateItem']);
+    Route::delete('/items/{id}', [AdminController::class, 'deleteItem']);
     
     // Sections Management
     Route::get('/sections', [AdminController::class, 'getSections']);

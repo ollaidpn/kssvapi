@@ -282,14 +282,17 @@ class AccountController extends Controller
                 'address' => 'required|string|max:255',
                 'city' => 'required|string|max:100',
                 'payment_method' => 'required|string|in:cash_on_delivery,wave_senegal,orange_money_senegal',
+                'promo_code_id' => 'nullable|integer|exists:promo_codes,id',
             ]);
             
             $user = $request->user();
             $paymentMethod = $validated['payment_method'];
+            $promoCodeId = $validated['promo_code_id'] ?? null;
             
             Log::info('API Account: Création commande', [
                 'user_id' => $user->id,
-                'payment_method' => $paymentMethod
+                'payment_method' => $paymentMethod,
+                'promo_code_id' => $promoCodeId
             ]);
             
             // Récupérer les articles du panier
@@ -305,8 +308,24 @@ class AccountController extends Controller
                 ], 400);
             }
             
-            // Calculer le total
-            $total = $cartItems->sum(fn($item) => $item->price * $item->qty);
+            // Calculer le sous-total
+            $subtotal = $cartItems->sum(fn($item) => $item->price * $item->qty);
+            
+            // Appliquer la réduction du code promo si présent
+            $discount = 0;
+            if ($promoCodeId) {
+                $promoCode = \App\Models\PromoCode::find($promoCodeId);
+                if ($promoCode && $promoCode->status === 'active') {
+                    if ($promoCode->discount_by === 'percent') {
+                        $discount = round($subtotal * ($promoCode->discount_value / 100));
+                    } else {
+                        $discount = $promoCode->discount_value;
+                    }
+                }
+            }
+            
+            // Total final
+            $total = max(0, $subtotal - $discount);
             
             // Générer référence unique
             $reference = 'CMD-' . date('Ymd') . '-' . strtoupper(substr(uniqid(), -6));
@@ -319,12 +338,12 @@ class AccountController extends Controller
                 'user_id' => $user->id,
                 'reference' => $reference,
                 'total' => $total,
-                'discount' => 0,
+                'discount' => $discount,
                 'status' => $initialStatus,
                 'address' => $validated['address'],
                 'city' => $validated['city'],
                 'payment_method' => $paymentMethod,
-                'promo_code_id' => null,
+                'promo_code_id' => $promoCodeId,
             ]);
             
             // Lier les articles du panier à la commande et changer le type
@@ -569,6 +588,70 @@ class AccountController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Erreur lors de l\'annulation'
+            ], 500);
+        }
+    }
+    
+    /**
+     * POST /api/promo-codes/validate
+     * Valider un code promo
+     */
+    public function validatePromoCode(Request $request): JsonResponse
+    {
+        try {
+            $validated = $request->validate(['code' => 'required|string']);
+            
+            $promo = \App\Models\PromoCode::where('code', $validated['code'])
+                ->where('status', 'active')
+                ->first();
+            
+            if (!$promo) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Code promo invalide'
+                ]);
+            }
+            
+            // Vérifier expiration
+            if ($promo->filter_by === 'date' && $promo->expiration && $promo->expiration < now()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Ce code promo a expiré'
+                ]);
+            }
+            
+            // Vérifier limite d'utilisation
+            if ($promo->limite !== null && $promo->limite > 0) {
+                $usageCount = Order::where('promo_code_id', $promo->id)->count();
+                if ($usageCount >= $promo->limite) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Ce code promo a atteint sa limite d\'utilisation'
+                    ]);
+                }
+            }
+            
+            Log::info('API Account: Code promo validé', [
+                'user_id' => $request->user()->id,
+                'promo_code' => $promo->code
+            ]);
+            
+            return response()->json([
+                'success' => true,
+                'data' => [
+                    'id' => $promo->id,
+                    'code' => $promo->code,
+                    'discount_by' => $promo->discount_by,
+                    'discount_value' => (float) $promo->discount_value,
+                ]
+            ]);
+        } catch (\Exception $e) {
+            Log::error('API Account: Erreur validation code promo', [
+                'error' => $e->getMessage()
+            ]);
+            return response()->json([
+                'success' => false,
+                'message' => 'Erreur lors de la validation du code promo'
             ], 500);
         }
     }
