@@ -12,13 +12,17 @@ class Item extends Model
     use HasFactory;
 
     protected $fillable = [
+        'sync_id',
         'name',
+        'code',
         'description',
         'price',
         'sale_price',
+        'stock',
         'category_id',
         'brand_id',
         'image',
+        'original_image',
         'images',
         'status',
     ];
@@ -26,8 +30,17 @@ class Item extends Model
     protected $casts = [
         'price' => 'decimal:2',
         'sale_price' => 'decimal:2',
+        'stock' => 'integer',
         'images' => 'array',
     ];
+
+    /**
+     * Relation avec la table synchronizations
+     */
+    public function synchronization(): BelongsTo
+    {
+        return $this->belongsTo(Synchronization::class, 'sync_id');
+    }
 
     /**
      * Catégorie de l'article

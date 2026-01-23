@@ -1814,18 +1814,9 @@ class AdminController extends Controller
     private function applyItemToLocal(Synchronization $sync): void
     {
         $data = $sync->data;
+        $imageService = new \App\Services\ImageDownloadService();
 
-        // Trouver ou créer le brand si disponible
-        $brandId = null;
-        if (!empty($data['marque'])) {
-            $brand = Brand::firstOrCreate(
-                ['name' => $data['marque']],
-                ['logo' => null, 'description' => null]
-            );
-            $brandId = $brand->id;
-        }
-
-        // Trouver ou créer la catégorie locale
+        // Trouver la catégorie locale via sync_id
         $categoryId = null;
         if (!empty($data['id_categorie'])) {
             $catSync = Synchronization::where('type', 'category')
@@ -1833,31 +1824,42 @@ class AdminController extends Controller
                 ->first();
             
             if ($catSync) {
-                $localCat = LocalCategory::where('name', $catSync->data['nom'] ?? '')->first();
+                $localCat = LocalCategory::where('sync_id', $catSync->id)->first();
                 if ($localCat) {
                     $categoryId = $localCat->id;
                 }
             }
         }
 
-        // Images
-        $images = [];
-        if (!empty($data['photo'])) {
-            $images[] = $data['photo'];
+        // Télécharger l'image principale
+        $originalImage = $data['photo'] ?? null;
+        $localImage = null;
+        if ($originalImage) {
+            $localImage = $imageService->downloadImage($originalImage, 'items');
         }
 
+        // Télécharger la galerie d'images
+        $gallery = $data['GALLERIE'] ?? [];
+        $localImages = [];
+        if (!empty($gallery) && is_array($gallery)) {
+            $localImages = $imageService->downloadImages($gallery, 'items/gallery');
+        }
+
+        // Créer ou mettre à jour l'item local via sync_id
         Item::updateOrCreate(
-            ['sku' => $sync->type_id], // Utiliser l'ID HomeIP comme SKU
+            ['sync_id' => $sync->id],
             [
                 'name' => $data['nom'] ?? $data['libelle'] ?? 'Sans nom',
-                'description' => $data['description'] ?? null,
+                'code' => $data['code'] ?? null,
+                'description' => null,
                 'price' => (float)($data['prix'] ?? 0),
                 'sale_price' => null,
+                'stock' => (int)($data['quantite'] ?? 0),
                 'category_id' => $categoryId,
-                'brand_id' => $brandId,
-                'image' => $data['photo'] ?? null,
-                'images' => $images,
-                'stock' => (int)($data['qte_stock'] ?? 0),
+                'brand_id' => null,
+                'original_image' => $originalImage,
+                'image' => $localImage ?? $originalImage,
+                'images' => !empty($localImages) ? $localImages : (!empty($gallery) ? $gallery : null),
                 'status' => 'active',
             ]
         );
@@ -1869,13 +1871,23 @@ class AdminController extends Controller
     private function applyCategoryToLocal(Synchronization $sync): void
     {
         $data = $sync->data;
+        $imageService = new \App\Services\ImageDownloadService();
 
+        // Télécharger le logo
+        $originalLogo = $data['ImageURL'] ?? $data['LOGO'] ?? $data['IconURL'] ?? null;
+        $localLogo = null;
+        if ($originalLogo) {
+            $localLogo = $imageService->downloadImage($originalLogo, 'categories');
+        }
+
+        // Créer ou mettre à jour la catégorie via sync_id
         LocalCategory::updateOrCreate(
-            ['name' => $data['nom'] ?? 'Sans nom'],
+            ['sync_id' => $sync->id],
             [
-                'description' => $data['description'] ?? null,
-                'logo' => $data['ImageURL'] ?? $data['LOGO'] ?? $data['IconURL'] ?? null,
-                'parent_id' => null, // L'API HomeIP n'a pas de hiérarchie
+                'name' => $data['nom'] ?? 'Sans nom',
+                'original_logo' => $originalLogo,
+                'logo' => $localLogo ?? $originalLogo,
+                'parent_id' => null,
             ]
         );
     }
