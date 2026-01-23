@@ -9,6 +9,7 @@ use App\Http\Controllers\Api\AccountController;
 use App\Http\Controllers\Api\AdminController;
 use App\Http\Controllers\Api\WebhookController;
 use App\Http\Controllers\Api\ProxyController;
+use App\Http\Controllers\Api\LocalController;
 
 /*
 |--------------------------------------------------------------------------
@@ -41,6 +42,19 @@ Route::prefix('proxy')->group(function () {
     Route::get('/products/{id}', [ProxyController::class, 'getProduct']);
     Route::get('/categories', [ProxyController::class, 'getCategories']);
     Route::get('/categories/{id}', [ProxyController::class, 'getCategory']);
+});
+
+// ============================================
+// Local Data Routes (Public - Fast Local DB)
+// ============================================
+
+Route::prefix('local')->group(function () {
+    Route::get('/products', [LocalController::class, 'getProducts']);
+    Route::get('/products/search/{query}', [LocalController::class, 'searchProducts']);
+    Route::get('/products/{id}', [LocalController::class, 'getProduct']);
+    Route::get('/products/{id}/related', [LocalController::class, 'getRelatedProducts']);
+    Route::get('/categories', [LocalController::class, 'getCategories']);
+    Route::get('/categories/{id}', [LocalController::class, 'getCategory']);
 });
 
 // ============================================
