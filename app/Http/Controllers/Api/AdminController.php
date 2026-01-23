@@ -9,7 +9,10 @@ use App\Models\User;
 use App\Models\Order;
 use App\Models\Cart;
 use App\Models\Payment;
+use App\Models\Section;
+use App\Models\AppInfo;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 
 class AdminController extends Controller
 {
@@ -328,6 +331,259 @@ class AdminController extends Controller
                 'success' => false,
                 'message' => 'Erreur lors du chargement du client'
             ], 500);
+        }
+    }
+
+    // ============================================
+    // Sections Management
+    // ============================================
+
+    /**
+     * GET /api/admin/sections
+     * Récupère les sections par types
+     */
+    public function getSections(Request $request): JsonResponse
+    {
+        try {
+            $types = $request->get('types', '');
+            $typesArray = array_filter(explode(',', $types));
+            
+            Log::info('API Admin: Chargement sections', ['types' => $typesArray]);
+            
+            $query = Section::query();
+            if (!empty($typesArray)) {
+                $query->whereIn('type', $typesArray);
+            }
+            
+            $sections = $query->orderBy('type')->orderBy('id')->get();
+            
+            return response()->json([
+                'success' => true,
+                'data' => $sections
+            ]);
+        } catch (\Exception $e) {
+            Log::error('API Admin: Erreur chargement sections', ['error' => $e->getMessage()]);
+            return response()->json(['success' => false, 'message' => 'Erreur'], 500);
+        }
+    }
+
+    /**
+     * POST /api/admin/sections/{id}
+     * Met à jour une section avec support upload image
+     */
+    public function updateSection(Request $request, int $id): JsonResponse
+    {
+        try {
+            $section = Section::findOrFail($id);
+            
+            Log::info('API Admin: Update section', ['section_id' => $id, 'type' => $section->type]);
+            
+            // Champs texte
+            $section->fill($request->only(['title', 'subtitle', 'description', 'btn', 'link']));
+            
+            // Upload image1
+            if ($request->hasFile('image1')) {
+                $fileName = 'section-' . $section->id . '-img1-' . time() . '.' . $request->file('image1')->getClientOriginalExtension();
+                $path = $request->file('image1')->storeAs('public/sections', $fileName);
+                if ($path) {
+                    $section->image1 = 'storage/sections/' . $fileName;
+                }
+            }
+            
+            // Upload image2 (seulement pour slider)
+            if ($request->hasFile('image2') && $section->type === 'slider') {
+                $fileName = 'section-' . $section->id . '-img2-' . time() . '.' . $request->file('image2')->getClientOriginalExtension();
+                $path = $request->file('image2')->storeAs('public/sections', $fileName);
+                if ($path) {
+                    $section->image2 = 'storage/sections/' . $fileName;
+                }
+            }
+            
+            $section->save();
+            
+            Log::info('API Admin: Section mise à jour', ['section_id' => $id]);
+            
+            return response()->json([
+                'success' => true,
+                'message' => 'Section mise à jour',
+                'data' => $section
+            ]);
+        } catch (\Exception $e) {
+            Log::error('API Admin: Erreur update section', [
+                'section_id' => $id,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * POST /api/admin/sections
+     * Crée une nouvelle section (seulement slider)
+     */
+    public function createSection(Request $request): JsonResponse
+    {
+        try {
+            $validated = $request->validate([
+                'type' => 'required|string|in:slider',
+                'title' => 'nullable|string',
+                'subtitle' => 'nullable|string',
+                'description' => 'nullable|string',
+                'btn' => 'nullable|string',
+                'link' => 'nullable|string',
+            ]);
+            
+            Log::info('API Admin: Création section', ['type' => $validated['type']]);
+            
+            $section = Section::create($validated);
+            
+            // Upload images si présentes
+            if ($request->hasFile('image1')) {
+                $fileName = 'section-' . $section->id . '-img1-' . time() . '.' . $request->file('image1')->getClientOriginalExtension();
+                $path = $request->file('image1')->storeAs('public/sections', $fileName);
+                if ($path) {
+                    $section->image1 = 'storage/sections/' . $fileName;
+                }
+            }
+            if ($request->hasFile('image2')) {
+                $fileName = 'section-' . $section->id . '-img2-' . time() . '.' . $request->file('image2')->getClientOriginalExtension();
+                $path = $request->file('image2')->storeAs('public/sections', $fileName);
+                if ($path) {
+                    $section->image2 = 'storage/sections/' . $fileName;
+                }
+            }
+            $section->save();
+            
+            Log::info('API Admin: Section créée', ['section_id' => $section->id]);
+            
+            return response()->json([
+                'success' => true,
+                'message' => 'Section créée',
+                'data' => $section
+            ]);
+        } catch (\Exception $e) {
+            Log::error('API Admin: Erreur création section', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * DELETE /api/admin/sections/{id}
+     * Supprime une section (seulement slider)
+     */
+    public function deleteSection(int $id): JsonResponse
+    {
+        try {
+            $section = Section::findOrFail($id);
+            
+            // Vérifier que c'est un slider (hero et ads ne peuvent pas être supprimés)
+            if ($section->type !== 'slider') {
+                Log::warning('API Admin: Tentative suppression section non-slider', [
+                    'section_id' => $id,
+                    'type' => $section->type
+                ]);
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Les sections Hero et Ads ne peuvent pas être supprimées'
+                ], 403);
+            }
+            
+            Log::info('API Admin: Suppression section slider', ['section_id' => $id]);
+            $section->delete();
+            
+            return response()->json(['success' => true, 'message' => 'Section supprimée']);
+        } catch (\Exception $e) {
+            Log::error('API Admin: Erreur suppression section', [
+                'section_id' => $id,
+                'error' => $e->getMessage()
+            ]);
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
+        }
+    }
+
+    // ============================================
+    // AppInfo Management
+    // ============================================
+
+    /**
+     * GET /api/admin/app-info
+     * Récupère les infos de l'application
+     */
+    public function getAppInfo(): JsonResponse
+    {
+        try {
+            Log::debug('API Admin: Chargement AppInfo');
+            
+            $appInfo = AppInfo::first();
+            
+            return response()->json([
+                'success' => true,
+                'data' => $appInfo
+            ]);
+        } catch (\Exception $e) {
+            Log::error('API Admin: Erreur chargement AppInfo', ['error' => $e->getMessage()]);
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * POST /api/admin/app-info
+     * Met à jour les infos de l'application
+     */
+    public function updateAppInfo(Request $request): JsonResponse
+    {
+        try {
+            $appInfo = AppInfo::first();
+            if (!$appInfo) {
+                $appInfo = new AppInfo();
+            }
+            
+            Log::info('API Admin: Update AppInfo');
+            
+            // Champs texte
+            $appInfo->fill($request->only([
+                'name', 'ccphone1', 'phone1', 'ccphone2', 'phone2',
+                'email1', 'email2', 'latitude', 'longitude',
+                'address', 'town', 'country', 'maintenance'
+            ]));
+            
+            // Upload logo_color
+            if ($request->hasFile('logo_color')) {
+                $fileName = 'logo-color-' . time() . '.' . $request->file('logo_color')->getClientOriginalExtension();
+                $path = $request->file('logo_color')->storeAs('public/logos', $fileName);
+                if ($path) {
+                    $appInfo->logo_color = 'storage/logos/' . $fileName;
+                }
+            }
+            
+            // Upload logo_white
+            if ($request->hasFile('logo_white')) {
+                $fileName = 'logo-white-' . time() . '.' . $request->file('logo_white')->getClientOriginalExtension();
+                $path = $request->file('logo_white')->storeAs('public/logos', $fileName);
+                if ($path) {
+                    $appInfo->logo_white = 'storage/logos/' . $fileName;
+                }
+            }
+            
+            $appInfo->save();
+            
+            Log::info('API Admin: AppInfo mise à jour', ['app_info_id' => $appInfo->id]);
+            
+            return response()->json([
+                'success' => true,
+                'message' => 'Informations mises à jour',
+                'data' => $appInfo
+            ]);
+        } catch (\Exception $e) {
+            Log::error('API Admin: Erreur update AppInfo', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
         }
     }
 }

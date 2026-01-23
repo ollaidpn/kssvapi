@@ -84,4 +84,14 @@ Route::middleware('auth:sanctum')->prefix('admin')->group(function () {
     // Clients Management
     Route::get('/clients', [AdminController::class, 'clients']);
     Route::get('/clients/{id}', [AdminController::class, 'clientDetail']);
+    
+    // Sections Management
+    Route::get('/sections', [AdminController::class, 'getSections']);
+    Route::post('/sections', [AdminController::class, 'createSection']);
+    Route::post('/sections/{id}', [AdminController::class, 'updateSection']);
+    Route::delete('/sections/{id}', [AdminController::class, 'deleteSection']);
+    
+    // AppInfo Management
+    Route::get('/app-info', [AdminController::class, 'getAppInfo']);
+    Route::post('/app-info', [AdminController::class, 'updateAppInfo']);
 });
