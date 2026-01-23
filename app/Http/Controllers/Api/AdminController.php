@@ -335,6 +335,215 @@ class AdminController extends Controller
     }
 
     // ============================================
+    // Orders Management
+    // ============================================
+
+    /**
+     * GET /api/admin/orders
+     * Récupère la liste des commandes avec filtres
+     */
+    public function getOrders(Request $request): JsonResponse
+    {
+        try {
+            $search = $request->get('search', '');
+            $status = $request->get('status', 'all');
+            $perPage = $request->get('per_page', 20);
+            
+            Log::info('API Admin: Chargement liste commandes', [
+                'admin_id' => $request->user()?->id,
+                'search' => $search, 
+                'status' => $status
+            ]);
+            
+            $query = Order::with('user:id,name,email')
+                ->withCount('carts as items_count');
+            
+            // Filtre par recherche (reference ou nom client)
+            if ($search) {
+                $query->where(function($q) use ($search) {
+                    $q->where('reference', 'like', "%{$search}%")
+                      ->orWhereHas('user', fn($u) => $u->where('name', 'like', "%{$search}%"));
+                });
+            }
+            
+            // Filtre par statut
+            if ($status !== 'all') {
+                $query->where('status', $status);
+            }
+            
+            $orders = $query->latest()->paginate($perPage);
+            
+            // Compter par statut pour les badges
+            $statusCounts = [
+                'all' => Order::count(),
+                'pending' => Order::where('status', 'pending')->count(),
+                'pending_payment' => Order::where('status', 'pending_payment')->count(),
+                'processing' => Order::where('status', 'processing')->count(),
+                'completed' => Order::where('status', 'completed')->count(),
+                'delivered' => Order::where('status', 'delivered')->count(),
+                'cancelled' => Order::where('status', 'cancelled')->count(),
+            ];
+            
+            $formattedOrders = $orders->map(fn($order) => [
+                'id' => $order->id,
+                'reference' => $order->reference ?? 'CMD-' . str_pad($order->id, 4, '0', STR_PAD_LEFT),
+                'client_name' => $order->user->name ?? 'Inconnu',
+                'client_email' => $order->user->email ?? '',
+                'items_count' => $order->items_count ?? 0,
+                'discount' => (float) $order->discount,
+                'total' => (float) $order->total,
+                'status' => $order->status ?? 'pending',
+                'created_at' => $order->created_at->format('Y-m-d H:i'),
+            ]);
+            
+            return response()->json([
+                'success' => true,
+                'data' => $formattedOrders,
+                'status_counts' => $statusCounts,
+                'meta' => [
+                    'current_page' => $orders->currentPage(),
+                    'last_page' => $orders->lastPage(),
+                    'per_page' => $orders->perPage(),
+                    'total' => $orders->total(),
+                ],
+            ]);
+        } catch (\Exception $e) {
+            Log::error('API Admin: Erreur liste commandes', [
+                'admin_id' => $request->user()?->id,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * GET /api/admin/orders/{id}
+     * Récupère le détail complet d'une commande
+     */
+    public function getOrderDetail(Request $request, int $id): JsonResponse
+    {
+        try {
+            Log::info('API Admin: Detail commande', [
+                'admin_id' => $request->user()?->id,
+                'order_id' => $id
+            ]);
+            
+            $order = Order::with(['user:id,name,email,phone,ccphone', 'carts', 'payments', 'promoCode'])
+                ->findOrFail($id);
+            
+            // Articles de la commande
+            $items = $order->carts->map(fn($cart) => [
+                'id' => $cart->id,
+                'item_id' => $cart->item_id,
+                'item_infos' => $cart->item_infos,
+                'price' => (float) $cart->price,
+                'qty' => $cart->qty,
+                'total' => (float) $cart->total,
+            ]);
+            
+            // Paiements
+            $payments = $order->payments->map(fn($payment) => [
+                'id' => $payment->id,
+                'reference' => $payment->reference ?? 'PAY-' . str_pad($payment->id, 4, '0', STR_PAD_LEFT),
+                'amount' => (float) $payment->amount,
+                'paid_by' => $payment->paid_by ?? 'N/A',
+                'date' => $payment->date?->format('Y-m-d'),
+                'created_at' => $payment->created_at->format('Y-m-d H:i'),
+            ]);
+            
+            // Calculs
+            $subtotal = $items->sum('total');
+            $totalPaid = $payments->sum('amount');
+            $remaining = $order->total - $totalPaid;
+            
+            return response()->json([
+                'success' => true,
+                'data' => [
+                    'order' => [
+                        'id' => $order->id,
+                        'reference' => $order->reference ?? 'CMD-' . str_pad($order->id, 4, '0', STR_PAD_LEFT),
+                        'status' => $order->status ?? 'pending',
+                        'discount' => (float) $order->discount,
+                        'total' => (float) $order->total,
+                        'created_at' => $order->created_at->format('Y-m-d H:i'),
+                        'updated_at' => $order->updated_at->format('Y-m-d H:i'),
+                    ],
+                    'client' => [
+                        'id' => $order->user->id ?? null,
+                        'name' => $order->user->name ?? 'Inconnu',
+                        'email' => $order->user->email ?? '',
+                        'phone' => ($order->user->ccphone ?? '') . ' ' . ($order->user->phone ?? ''),
+                    ],
+                    'promo_code' => $order->promoCode ? [
+                        'code' => $order->promoCode->code ?? null,
+                        'value' => $order->promoCode->value ?? null,
+                    ] : null,
+                    'items' => $items,
+                    'payments' => $payments,
+                    'summary' => [
+                        'subtotal' => $subtotal,
+                        'discount' => (float) $order->discount,
+                        'total' => (float) $order->total,
+                        'total_paid' => $totalPaid,
+                        'remaining' => $remaining,
+                    ],
+                ],
+            ]);
+        } catch (\Exception $e) {
+            Log::error('API Admin: Erreur detail commande', [
+                'admin_id' => $request->user()?->id,
+                'order_id' => $id,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * PUT /api/admin/orders/{id}/status
+     * Change le statut d'une commande
+     */
+    public function updateOrderStatus(Request $request, int $id): JsonResponse
+    {
+        try {
+            $validated = $request->validate([
+                'status' => 'required|string|in:pending,pending_payment,processing,completed,delivered,cancelled',
+            ]);
+            
+            $order = Order::findOrFail($id);
+            $oldStatus = $order->status;
+            $order->status = $validated['status'];
+            $order->save();
+            
+            Log::info('API Admin: Changement statut commande', [
+                'order_id' => $id,
+                'old_status' => $oldStatus,
+                'new_status' => $validated['status'],
+                'admin_id' => $request->user()?->id,
+            ]);
+            
+            return response()->json([
+                'success' => true,
+                'message' => 'Statut mis à jour',
+                'data' => [
+                    'id' => $order->id,
+                    'reference' => $order->reference ?? 'CMD-' . str_pad($order->id, 4, '0', STR_PAD_LEFT),
+                    'status' => $order->status,
+                ],
+            ]);
+        } catch (\Exception $e) {
+            Log::error('API Admin: Erreur changement statut', [
+                'order_id' => $id,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
+        }
+    }
+
+    // ============================================
     // Sections Management
     // ============================================
 
