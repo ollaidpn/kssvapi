@@ -24,6 +24,12 @@ class ImageDownloadService
                 return null;
             }
             
+            // Ignorer les images placeholder
+            if ($this->isPlaceholderImage($url)) {
+                Log::info('ImageDownloadService: Image placeholder ignorée', ['url' => $url]);
+                return null;
+            }
+            
             // Récupérer l'image avec timeout
             $response = Http::timeout(30)
                 ->withOptions(['verify' => false]) // Ignorer SSL pour HomeIP
@@ -150,5 +156,35 @@ class ImageDownloadService
         $validExtensions = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'];
         
         return in_array($extension, $validExtensions) ? $extension : null;
+    }
+    
+    /**
+     * Vérifie si l'URL est une image placeholder à ignorer
+     */
+    private function isPlaceholderImage(string $url): bool
+    {
+        $placeholders = [
+            'aucunimage.png',
+            'aucunimage.jpg',
+            'aucun_image.png',
+            'aucun_image.jpg',
+            'noimage.png',
+            'noimage.jpg',
+            'no_image.png',
+            'no_image.jpg',
+            'placeholder.png',
+            'placeholder.jpg',
+            'default.png',
+            'default.jpg',
+        ];
+        
+        $urlLower = strtolower($url);
+        foreach ($placeholders as $placeholder) {
+            if (str_contains($urlLower, $placeholder)) {
+                return true;
+            }
+        }
+        
+        return false;
     }
 }

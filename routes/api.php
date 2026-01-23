@@ -179,6 +179,8 @@ Route::middleware('auth:sanctum')->prefix('admin')->group(function () {
     Route::post('/synchronizations/run', [AdminController::class, 'runSync']);
     Route::post('/synchronizations/apply', [AdminController::class, 'applySyncToLocal']);
     Route::post('/synchronizations/mark-synced', [AdminController::class, 'markAsSynced']);
+    Route::post('/synchronizations/migrate/{id}', [AdminController::class, 'migrateSingleEntry']);
+    Route::get('/synchronizations/count-pending', [AdminController::class, 'countPendingMigrations']);
     Route::delete('/synchronizations', [AdminController::class, 'deleteSyncEntries']);
     Route::delete('/synchronizations/{id}', [AdminController::class, 'deleteSyncEntry']);
 });

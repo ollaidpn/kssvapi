@@ -1831,12 +1831,15 @@ class AdminController extends Controller
             }
         }
 
-        // Télécharger l'image principale
+        // Télécharger l'image principale (retourne null si placeholder)
         $originalImage = $data['photo'] ?? null;
         $localImage = null;
         if ($originalImage) {
             $localImage = $imageService->downloadImage($originalImage, 'items');
         }
+        
+        // Si pas d'image locale valide, utiliser no-image.png
+        $finalImage = $localImage ?? 'no-image.png';
 
         // Télécharger la galerie d'images
         $gallery = $data['GALLERIE'] ?? [];
@@ -1858,7 +1861,7 @@ class AdminController extends Controller
                 'category_id' => $categoryId,
                 'brand_id' => null,
                 'original_image' => $originalImage,
-                'image' => $localImage ?? $originalImage,
+                'image' => $finalImage,
                 'images' => !empty($localImages) ? $localImages : (!empty($gallery) ? $gallery : null),
                 'status' => 'active',
             ]
@@ -1873,12 +1876,15 @@ class AdminController extends Controller
         $data = $sync->data;
         $imageService = new \App\Services\ImageDownloadService();
 
-        // Télécharger le logo
+        // Télécharger le logo (retourne null si placeholder)
         $originalLogo = $data['ImageURL'] ?? $data['LOGO'] ?? $data['IconURL'] ?? null;
         $localLogo = null;
         if ($originalLogo) {
             $localLogo = $imageService->downloadImage($originalLogo, 'categories');
         }
+        
+        // Si pas de logo local valide, utiliser no-image.png
+        $finalLogo = $localLogo ?? 'no-image.png';
 
         // Créer ou mettre à jour la catégorie via sync_id
         LocalCategory::updateOrCreate(
@@ -1886,7 +1892,7 @@ class AdminController extends Controller
             [
                 'name' => $data['nom'] ?? 'Sans nom',
                 'original_logo' => $originalLogo,
-                'logo' => $localLogo ?? $originalLogo,
+                'logo' => $finalLogo,
                 'parent_id' => null,
             ]
         );
@@ -1905,6 +1911,77 @@ class AdminController extends Controller
             return response()->json([
                 'success' => true,
                 'message' => "$updated élément(s) marqué(s) comme synchronisé(s)"
+            ]);
+        } catch (\Exception $e) {
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * POST /api/admin/synchronizations/migrate/{id}
+     * Migre une seule entrée vers la table locale
+     */
+    public function migrateSingleEntry(int $id): JsonResponse
+    {
+        try {
+            $sync = Synchronization::find($id);
+            if (!$sync) {
+                return response()->json(['success' => false, 'message' => 'Entrée non trouvée'], 404);
+            }
+
+            if ($sync->type === 'item') {
+                $this->applyItemToLocal($sync);
+            } elseif ($sync->type === 'category') {
+                $this->applyCategoryToLocal($sync);
+            }
+
+            $sync->update([
+                'status' => 'synced',
+                'last_updated_at' => now()
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Migré avec succès',
+                'id' => $id
+            ]);
+        } catch (\Exception $e) {
+            Log::error('API Admin: Erreur migration single', [
+                'id' => $id,
+                'error' => $e->getMessage()
+            ]);
+            
+            $sync?->update(['status' => 'error']);
+            
+            return response()->json([
+                'success' => false, 
+                'message' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * GET /api/admin/synchronizations/count-pending
+     * Compte les entrées en attente de migration par type
+     */
+    public function countPendingMigrations(Request $request): JsonResponse
+    {
+        try {
+            $type = $request->get('type');
+            
+            $query = Synchronization::whereIn('status', ['unsync', 'changed']);
+            
+            if ($type && $type !== 'all') {
+                $query->where('type', $type);
+            }
+            
+            $count = $query->count();
+            $ids = $query->pluck('id')->toArray();
+            
+            return response()->json([
+                'success' => true,
+                'count' => $count,
+                'ids' => $ids
             ]);
         } catch (\Exception $e) {
             return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
