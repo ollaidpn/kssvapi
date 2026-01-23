@@ -12,6 +12,7 @@ class Cart extends Model
     use Searchable;
 
     protected $fillable = [
+        'user_id',
         'type',
         'item_id',
         'item_infos',
@@ -23,6 +24,17 @@ class Cart extends Model
     ];
 
     protected $searchableFields = ['*'];
+
+    protected $casts = [
+        'item_infos' => 'array',
+        'price' => 'decimal:2',
+        'total' => 'decimal:2',
+    ];
+
+    public function user()
+    {
+        return $this->belongsTo(User::class);
+    }
 
     public function order()
     {
