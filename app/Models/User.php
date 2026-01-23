@@ -40,6 +40,11 @@ class User extends Authenticatable
         return $this->hasMany(Order::class);
     }
 
+    public function carts()
+    {
+        return $this->hasMany(Cart::class);
+    }
+
     public function isSuperAdmin(): bool
     {
         return in_array($this->email, config('auth.super_admins'));

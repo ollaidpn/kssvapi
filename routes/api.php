@@ -6,6 +6,7 @@ use App\Http\Controllers\Api\SectionController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\CartController;
 use App\Http\Controllers\Api\AccountController;
+use App\Http\Controllers\Api\AdminController;
 
 /*
 |--------------------------------------------------------------------------
@@ -70,4 +71,17 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::put('/cart/{id}', [CartController::class, 'update']);
     Route::delete('/cart/{id}', [CartController::class, 'destroy']);
     Route::delete('/cart', [CartController::class, 'clear']);
+});
+
+// ============================================
+// Admin Routes (Requires Sanctum Token + Admin)
+// ============================================
+
+Route::middleware('auth:sanctum')->prefix('admin')->group(function () {
+    // Dashboard
+    Route::get('/dashboard', [AdminController::class, 'dashboard']);
+    
+    // Clients Management
+    Route::get('/clients', [AdminController::class, 'clients']);
+    Route::get('/clients/{id}', [AdminController::class, 'clientDetail']);
 });

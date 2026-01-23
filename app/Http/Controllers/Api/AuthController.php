@@ -11,6 +11,7 @@ use Illuminate\Http\JsonResponse;
 use App\Http\Controllers\Controller;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
@@ -21,36 +22,54 @@ class AuthController extends Controller
      */
     public function login(Request $request): JsonResponse
     {
-        $credentials = $request->validate([
-            'email' => 'required|email',
-            'password' => 'required|string',
-        ]);
+        try {
+            Log::info('API Auth: Tentative de connexion', ['email' => $request->email, 'ip' => $request->ip()]);
+            
+            $credentials = $request->validate([
+                'email' => 'required|email',
+                'password' => 'required|string',
+            ]);
 
-        if (!auth()->attempt($credentials)) {
+            if (!auth()->attempt($credentials)) {
+                Log::warning('API Auth: Echec de connexion - identifiants incorrects', ['email' => $request->email, 'ip' => $request->ip()]);
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Identifiants incorrects. Veuillez vérifier votre email et mot de passe.',
+                ], 401);
+            }
+
+            $user = User::where('email', $request->email)->firstOrFail();
+            $token = $user->createToken('auth-token');
+
+            Log::info('API Auth: Connexion reussie', ['user_id' => $user->id, 'email' => $user->email, 'account_type' => $user->account_type]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Connexion réussie',
+                'token' => $token->plainTextToken,
+                'user' => [
+                    'id' => $user->id,
+                    'name' => $user->name,
+                    'email' => $user->email,
+                    'ccphone' => $user->ccphone,
+                    'phone' => $user->phone,
+                    'account_type' => $user->account_type,
+                    'reference' => $user->reference,
+                    'avatar' => $user->avatar,
+                ],
+            ]);
+        } catch (\Exception $e) {
+            Log::error('API Auth: Erreur lors de la connexion', [
+                'email' => $request->email,
+                'error' => $e->getMessage(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine()
+            ]);
             return response()->json([
                 'success' => false,
-                'message' => 'Identifiants incorrects. Veuillez vérifier votre email et mot de passe.',
-            ], 401);
+                'message' => 'Une erreur est survenue lors de la connexion.',
+            ], 500);
         }
-
-        $user = User::where('email', $request->email)->firstOrFail();
-        $token = $user->createToken('auth-token');
-
-        return response()->json([
-            'success' => true,
-            'message' => 'Connexion réussie',
-            'token' => $token->plainTextToken,
-            'user' => [
-                'id' => $user->id,
-                'name' => $user->name,
-                'email' => $user->email,
-                'ccphone' => $user->ccphone,
-                'phone' => $user->phone,
-                'account_type' => $user->account_type,
-                'reference' => $user->reference,
-                'avatar' => $user->avatar,
-            ],
-        ]);
     }
 
     /**
@@ -58,42 +77,62 @@ class AuthController extends Controller
      */
     public function registerSendOtp(Request $request): JsonResponse
     {
-        $validated = $request->validate([
-            'name' => 'required|string|max:255',
-            'email' => 'required|email|unique:users,email',
-            'ccphone' => 'required|string|max:5',
-            'phone' => 'required|string|max:20',
-        ], [
-            'email.unique' => 'Cette adresse email est déjà utilisée.',
-        ]);
+        try {
+            Log::info('API Auth: Demande OTP inscription', ['email' => $request->email, 'phone' => $request->phone]);
+            
+            $validated = $request->validate([
+                'name' => 'required|string|max:255',
+                'email' => 'required|email|unique:users,email',
+                'ccphone' => 'required|string|max:5',
+                'phone' => 'required|string|max:20',
+            ], [
+                'email.unique' => 'Cette adresse email est déjà utilisée.',
+            ]);
 
-        // Check if phone already exists
-        $existingPhone = User::where('ccphone', $validated['ccphone'])
-            ->where('phone', $validated['phone'])
-            ->exists();
+            // Check if phone already exists
+            $existingPhone = User::where('ccphone', $validated['ccphone'])
+                ->where('phone', $validated['phone'])
+                ->exists();
 
-        if ($existingPhone) {
+            if ($existingPhone) {
+                Log::warning('API Auth: Telephone deja utilise', ['phone' => $validated['phone']]);
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Ce numéro de téléphone est déjà utilisé.',
+                ], 422);
+            }
+
+            // Create OTP with pending registration data
+            $otp = OtpCode::createForRegistration($validated['email'], [
+                'name' => $validated['name'],
+                'ccphone' => $validated['ccphone'],
+                'phone' => $validated['phone'],
+            ]);
+
+            // Send OTP email
+            Mail::to($validated['email'])->send(new OtpMail($otp->code, 'registration'));
+
+            Log::info('API Auth: OTP inscription envoye', ['email' => $validated['email']]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Un code de vérification a été envoyé à votre adresse email.',
+                'email' => $validated['email'],
+            ]);
+        } catch (ValidationException $e) {
+            Log::warning('API Auth: Validation echouee pour inscription', ['errors' => $e->errors()]);
+            throw $e;
+        } catch (\Exception $e) {
+            Log::error('API Auth: Erreur envoi OTP inscription', [
+                'email' => $request->email,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
             return response()->json([
                 'success' => false,
-                'message' => 'Ce numéro de téléphone est déjà utilisé.',
-            ], 422);
+                'message' => 'Une erreur est survenue lors de l\'envoi du code.',
+            ], 500);
         }
-
-        // Create OTP with pending registration data
-        $otp = OtpCode::createForRegistration($validated['email'], [
-            'name' => $validated['name'],
-            'ccphone' => $validated['ccphone'],
-            'phone' => $validated['phone'],
-        ]);
-
-        // Send OTP email
-        Mail::to($validated['email'])->send(new OtpMail($otp->code, 'registration'));
-
-        return response()->json([
-            'success' => true,
-            'message' => 'Un code de vérification a été envoyé à votre adresse email.',
-            'email' => $validated['email'],
-        ]);
     }
 
     /**
@@ -101,25 +140,41 @@ class AuthController extends Controller
      */
     public function registerVerifyOtp(Request $request): JsonResponse
     {
-        $validated = $request->validate([
-            'email' => 'required|email',
-            'code' => 'required|string|size:6',
-        ]);
+        try {
+            Log::info('API Auth: Verification OTP inscription', ['email' => $request->email]);
+            
+            $validated = $request->validate([
+                'email' => 'required|email',
+                'code' => 'required|string|size:6',
+            ]);
 
-        $otp = OtpCode::findValid($validated['email'], $validated['code'], 'registration');
+            $otp = OtpCode::findValid($validated['email'], $validated['code'], 'registration');
 
-        if (!$otp) {
+            if (!$otp) {
+                Log::warning('API Auth: OTP inscription invalide', ['email' => $validated['email']]);
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Code invalide ou expiré. Veuillez réessayer.',
+                ], 422);
+            }
+
+            Log::info('API Auth: OTP inscription verifie avec succes', ['email' => $validated['email']]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Code vérifié avec succès. Vous pouvez maintenant créer votre mot de passe.',
+                'email' => $validated['email'],
+            ]);
+        } catch (\Exception $e) {
+            Log::error('API Auth: Erreur verification OTP inscription', [
+                'email' => $request->email,
+                'error' => $e->getMessage()
+            ]);
             return response()->json([
                 'success' => false,
-                'message' => 'Code invalide ou expiré. Veuillez réessayer.',
-            ], 422);
+                'message' => 'Une erreur est survenue.',
+            ], 500);
         }
-
-        return response()->json([
-            'success' => true,
-            'message' => 'Code vérifié avec succès. Vous pouvez maintenant créer votre mot de passe.',
-            'email' => $validated['email'],
-        ]);
     }
 
     /**
@@ -127,58 +182,79 @@ class AuthController extends Controller
      */
     public function registerComplete(Request $request): JsonResponse
     {
-        $validated = $request->validate([
-            'email' => 'required|email',
-            'code' => 'required|string|size:6',
-            'password' => 'required|string|min:8|confirmed',
-        ]);
+        try {
+            Log::info('API Auth: Finalisation inscription', ['email' => $request->email]);
+            
+            $validated = $request->validate([
+                'email' => 'required|email',
+                'code' => 'required|string|size:6',
+                'password' => 'required|string|min:8|confirmed',
+            ]);
 
-        $otp = OtpCode::findValid($validated['email'], $validated['code'], 'registration');
+            $otp = OtpCode::findValid($validated['email'], $validated['code'], 'registration');
 
-        if (!$otp) {
+            if (!$otp) {
+                Log::warning('API Auth: Session inscription expiree', ['email' => $validated['email']]);
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Session expirée. Veuillez recommencer l\'inscription.',
+                ], 422);
+            }
+
+            // Create user with pending data
+            $pendingData = $otp->pending_data;
+            
+            $user = User::create([
+                'name' => $pendingData['name'],
+                'email' => $validated['email'],
+                'password' => Hash::make($validated['password']),
+                'ccphone' => $pendingData['ccphone'],
+                'phone' => $pendingData['phone'],
+                'account_type' => 'client',
+                'reference' => 'KSSV-' . strtoupper(Str::random(6)),
+            ]);
+
+            // Mark OTP as used
+            $otp->markAsUsed();
+
+            // Send welcome email
+            Mail::to($user->email)->send(new WelcomeMail($user));
+
+            // Create token
+            $token = $user->createToken('auth-token');
+
+            Log::info('API Auth: Nouveau compte cree avec succes', [
+                'user_id' => $user->id,
+                'email' => $user->email,
+                'reference' => $user->reference
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Compte créé avec succès ! Bienvenue chez KSSV.',
+                'token' => $token->plainTextToken,
+                'user' => [
+                    'id' => $user->id,
+                    'name' => $user->name,
+                    'email' => $user->email,
+                    'ccphone' => $user->ccphone,
+                    'phone' => $user->phone,
+                    'account_type' => $user->account_type,
+                    'reference' => $user->reference,
+                    'avatar' => $user->avatar,
+                ],
+            ]);
+        } catch (\Exception $e) {
+            Log::error('API Auth: Erreur creation compte', [
+                'email' => $request->email,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
             return response()->json([
                 'success' => false,
-                'message' => 'Session expirée. Veuillez recommencer l\'inscription.',
-            ], 422);
+                'message' => 'Une erreur est survenue lors de la création du compte.',
+            ], 500);
         }
-
-        // Create user with pending data
-        $pendingData = $otp->pending_data;
-        
-        $user = User::create([
-            'name' => $pendingData['name'],
-            'email' => $validated['email'],
-            'password' => Hash::make($validated['password']),
-            'ccphone' => $pendingData['ccphone'],
-            'phone' => $pendingData['phone'],
-            'account_type' => 'client',
-            'reference' => 'KSSV-' . strtoupper(Str::random(6)),
-        ]);
-
-        // Mark OTP as used
-        $otp->markAsUsed();
-
-        // Send welcome email
-        Mail::to($user->email)->send(new WelcomeMail($user));
-
-        // Create token
-        $token = $user->createToken('auth-token');
-
-        return response()->json([
-            'success' => true,
-            'message' => 'Compte créé avec succès ! Bienvenue chez KSSV.',
-            'token' => $token->plainTextToken,
-            'user' => [
-                'id' => $user->id,
-                'name' => $user->name,
-                'email' => $user->email,
-                'ccphone' => $user->ccphone,
-                'phone' => $user->phone,
-                'account_type' => $user->account_type,
-                'reference' => $user->reference,
-                'avatar' => $user->avatar,
-            ],
-        ]);
     }
 
     /**
@@ -186,23 +262,41 @@ class AuthController extends Controller
      */
     public function forgotPasswordSendOtp(Request $request): JsonResponse
     {
-        $validated = $request->validate([
-            'email' => 'required|email|exists:users,email',
-        ], [
-            'email.exists' => 'Aucun compte n\'est associé à cette adresse email.',
-        ]);
+        try {
+            Log::info('API Auth: Demande reset mot de passe', ['email' => $request->email]);
+            
+            $validated = $request->validate([
+                'email' => 'required|email|exists:users,email',
+            ], [
+                'email.exists' => 'Aucun compte n\'est associé à cette adresse email.',
+            ]);
 
-        // Create OTP for password reset
-        $otp = OtpCode::createForPasswordReset($validated['email']);
+            // Create OTP for password reset
+            $otp = OtpCode::createForPasswordReset($validated['email']);
 
-        // Send OTP email
-        Mail::to($validated['email'])->send(new OtpMail($otp->code, 'password_reset'));
+            // Send OTP email
+            Mail::to($validated['email'])->send(new OtpMail($otp->code, 'password_reset'));
 
-        return response()->json([
-            'success' => true,
-            'message' => 'Un code de réinitialisation a été envoyé à votre adresse email.',
-            'email' => $validated['email'],
-        ]);
+            Log::info('API Auth: OTP reset mot de passe envoye', ['email' => $validated['email']]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Un code de réinitialisation a été envoyé à votre adresse email.',
+                'email' => $validated['email'],
+            ]);
+        } catch (ValidationException $e) {
+            Log::warning('API Auth: Email non trouve pour reset', ['email' => $request->email]);
+            throw $e;
+        } catch (\Exception $e) {
+            Log::error('API Auth: Erreur envoi OTP reset', [
+                'email' => $request->email,
+                'error' => $e->getMessage()
+            ]);
+            return response()->json([
+                'success' => false,
+                'message' => 'Une erreur est survenue.',
+            ], 500);
+        }
     }
 
     /**
@@ -210,25 +304,41 @@ class AuthController extends Controller
      */
     public function forgotPasswordVerifyOtp(Request $request): JsonResponse
     {
-        $validated = $request->validate([
-            'email' => 'required|email',
-            'code' => 'required|string|size:6',
-        ]);
+        try {
+            Log::info('API Auth: Verification OTP reset', ['email' => $request->email]);
+            
+            $validated = $request->validate([
+                'email' => 'required|email',
+                'code' => 'required|string|size:6',
+            ]);
 
-        $otp = OtpCode::findValid($validated['email'], $validated['code'], 'password_reset');
+            $otp = OtpCode::findValid($validated['email'], $validated['code'], 'password_reset');
 
-        if (!$otp) {
+            if (!$otp) {
+                Log::warning('API Auth: OTP reset invalide', ['email' => $validated['email']]);
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Code invalide ou expiré. Veuillez réessayer.',
+                ], 422);
+            }
+
+            Log::info('API Auth: OTP reset verifie', ['email' => $validated['email']]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Code vérifié. Vous pouvez maintenant créer un nouveau mot de passe.',
+                'email' => $validated['email'],
+            ]);
+        } catch (\Exception $e) {
+            Log::error('API Auth: Erreur verification OTP reset', [
+                'email' => $request->email,
+                'error' => $e->getMessage()
+            ]);
             return response()->json([
                 'success' => false,
-                'message' => 'Code invalide ou expiré. Veuillez réessayer.',
-            ], 422);
+                'message' => 'Une erreur est survenue.',
+            ], 500);
         }
-
-        return response()->json([
-            'success' => true,
-            'message' => 'Code vérifié. Vous pouvez maintenant créer un nouveau mot de passe.',
-            'email' => $validated['email'],
-        ]);
     }
 
     /**
@@ -236,34 +346,50 @@ class AuthController extends Controller
      */
     public function resetPassword(Request $request): JsonResponse
     {
-        $validated = $request->validate([
-            'email' => 'required|email',
-            'code' => 'required|string|size:6',
-            'password' => 'required|string|min:8|confirmed',
-        ]);
+        try {
+            Log::info('API Auth: Reset mot de passe', ['email' => $request->email]);
+            
+            $validated = $request->validate([
+                'email' => 'required|email',
+                'code' => 'required|string|size:6',
+                'password' => 'required|string|min:8|confirmed',
+            ]);
 
-        $otp = OtpCode::findValid($validated['email'], $validated['code'], 'password_reset');
+            $otp = OtpCode::findValid($validated['email'], $validated['code'], 'password_reset');
 
-        if (!$otp) {
+            if (!$otp) {
+                Log::warning('API Auth: Session reset expiree', ['email' => $validated['email']]);
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Session expirée. Veuillez recommencer la procédure.',
+                ], 422);
+            }
+
+            // Update user password
+            $user = User::where('email', $validated['email'])->firstOrFail();
+            $user->update([
+                'password' => Hash::make($validated['password']),
+            ]);
+
+            // Mark OTP as used
+            $otp->markAsUsed();
+
+            Log::info('API Auth: Mot de passe reinitialise avec succes', ['user_id' => $user->id, 'email' => $user->email]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Mot de passe modifié avec succès. Vous pouvez maintenant vous connecter.',
+            ]);
+        } catch (\Exception $e) {
+            Log::error('API Auth: Erreur reset mot de passe', [
+                'email' => $request->email,
+                'error' => $e->getMessage()
+            ]);
             return response()->json([
                 'success' => false,
-                'message' => 'Session expirée. Veuillez recommencer la procédure.',
-            ], 422);
+                'message' => 'Une erreur est survenue.',
+            ], 500);
         }
-
-        // Update user password
-        $user = User::where('email', $validated['email'])->firstOrFail();
-        $user->update([
-            'password' => Hash::make($validated['password']),
-        ]);
-
-        // Mark OTP as used
-        $otp->markAsUsed();
-
-        return response()->json([
-            'success' => true,
-            'message' => 'Mot de passe modifié avec succès. Vous pouvez maintenant vous connecter.',
-        ]);
     }
 
     /**
@@ -272,6 +398,7 @@ class AuthController extends Controller
     public function me(Request $request): JsonResponse
     {
         $user = $request->user();
+        Log::debug('API Auth: Recuperation profil utilisateur', ['user_id' => $user->id]);
 
         return response()->json([
             'success' => true,
@@ -293,6 +420,9 @@ class AuthController extends Controller
      */
     public function logout(Request $request): JsonResponse
     {
+        $user = $request->user();
+        Log::info('API Auth: Deconnexion', ['user_id' => $user->id, 'email' => $user->email]);
+        
         $request->user()->currentAccessToken()->delete();
 
         return response()->json([
@@ -306,45 +436,62 @@ class AuthController extends Controller
      */
     public function resendOtp(Request $request): JsonResponse
     {
-        $validated = $request->validate([
-            'email' => 'required|email',
-            'type' => 'required|in:registration,password_reset',
-        ]);
+        try {
+            Log::info('API Auth: Demande renvoi OTP', ['email' => $request->email, 'type' => $request->type]);
+            
+            $validated = $request->validate([
+                'email' => 'required|email',
+                'type' => 'required|in:registration,password_reset',
+            ]);
 
-        if ($validated['type'] === 'registration') {
-            // Get existing pending data
-            $existingOtp = OtpCode::where('email', $validated['email'])
-                ->where('type', 'registration')
-                ->latest()
-                ->first();
+            if ($validated['type'] === 'registration') {
+                // Get existing pending data
+                $existingOtp = OtpCode::where('email', $validated['email'])
+                    ->where('type', 'registration')
+                    ->latest()
+                    ->first();
 
-            if (!$existingOtp || !$existingOtp->pending_data) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Session expirée. Veuillez recommencer l\'inscription.',
-                ], 422);
+                if (!$existingOtp || !$existingOtp->pending_data) {
+                    Log::warning('API Auth: Session inscription expiree pour renvoi OTP', ['email' => $validated['email']]);
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Session expirée. Veuillez recommencer l\'inscription.',
+                    ], 422);
+                }
+
+                $otp = OtpCode::createForRegistration($validated['email'], $existingOtp->pending_data);
+            } else {
+                // Check if user exists
+                if (!User::where('email', $validated['email'])->exists()) {
+                    Log::warning('API Auth: Email non trouve pour renvoi OTP reset', ['email' => $validated['email']]);
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Aucun compte n\'est associé à cette adresse email.',
+                    ], 422);
+                }
+
+                $otp = OtpCode::createForPasswordReset($validated['email']);
             }
 
-            $otp = OtpCode::createForRegistration($validated['email'], $existingOtp->pending_data);
-        } else {
-            // Check if user exists
-            if (!User::where('email', $validated['email'])->exists()) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Aucun compte n\'est associé à cette adresse email.',
-                ], 422);
-            }
+            // Send OTP email
+            Mail::to($validated['email'])->send(new OtpMail($otp->code, $validated['type']));
 
-            $otp = OtpCode::createForPasswordReset($validated['email']);
+            Log::info('API Auth: OTP renvoye avec succes', ['email' => $validated['email'], 'type' => $validated['type']]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Un nouveau code a été envoyé à votre adresse email.',
+            ]);
+        } catch (\Exception $e) {
+            Log::error('API Auth: Erreur renvoi OTP', [
+                'email' => $request->email,
+                'error' => $e->getMessage()
+            ]);
+            return response()->json([
+                'success' => false,
+                'message' => 'Une erreur est survenue.',
+            ], 500);
         }
-
-        // Send OTP email
-        Mail::to($validated['email'])->send(new OtpMail($otp->code, $validated['type']));
-
-        return response()->json([
-            'success' => true,
-            'message' => 'Un nouveau code a été envoyé à votre adresse email.',
-        ]);
     }
 
     /**
@@ -353,29 +500,44 @@ class AuthController extends Controller
      */
     public function updateProfile(Request $request): JsonResponse
     {
-        $validated = $request->validate([
-            'name' => 'required|string|max:255',
-            'ccphone' => 'required|string|max:5',
-            'phone' => 'required|string|max:20',
-        ]);
+        try {
+            $user = $request->user();
+            Log::info('API Auth: Mise a jour profil', ['user_id' => $user->id]);
+            
+            $validated = $request->validate([
+                'name' => 'required|string|max:255',
+                'ccphone' => 'required|string|max:5',
+                'phone' => 'required|string|max:20',
+            ]);
 
-        $user = $request->user();
-        $user->update($validated);
+            $user->update($validated);
 
-        return response()->json([
-            'success' => true,
-            'message' => 'Profil mis à jour avec succès.',
-            'user' => [
-                'id' => $user->id,
-                'name' => $user->name,
-                'email' => $user->email,
-                'ccphone' => $user->ccphone,
-                'phone' => $user->phone,
-                'account_type' => $user->account_type,
-                'reference' => $user->reference,
-                'avatar' => $user->avatar,
-            ],
-        ]);
+            Log::info('API Auth: Profil mis a jour avec succes', ['user_id' => $user->id, 'changes' => $validated]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Profil mis à jour avec succès.',
+                'user' => [
+                    'id' => $user->id,
+                    'name' => $user->name,
+                    'email' => $user->email,
+                    'ccphone' => $user->ccphone,
+                    'phone' => $user->phone,
+                    'account_type' => $user->account_type,
+                    'reference' => $user->reference,
+                    'avatar' => $user->avatar,
+                ],
+            ]);
+        } catch (\Exception $e) {
+            Log::error('API Auth: Erreur mise a jour profil', [
+                'user_id' => $request->user()?->id,
+                'error' => $e->getMessage()
+            ]);
+            return response()->json([
+                'success' => false,
+                'message' => 'Une erreur est survenue.',
+            ], 500);
+        }
     }
 
     /**
@@ -384,29 +546,44 @@ class AuthController extends Controller
      */
     public function updatePassword(Request $request): JsonResponse
     {
-        $validated = $request->validate([
-            'current_password' => 'required|string',
-            'password' => 'required|string|min:8|confirmed',
-        ]);
+        try {
+            $user = $request->user();
+            Log::info('API Auth: Demande changement mot de passe', ['user_id' => $user->id]);
+            
+            $validated = $request->validate([
+                'current_password' => 'required|string',
+                'password' => 'required|string|min:8|confirmed',
+            ]);
 
-        $user = $request->user();
+            // Vérifier le mot de passe actuel
+            if (!Hash::check($validated['current_password'], $user->password)) {
+                Log::warning('API Auth: Mot de passe actuel incorrect', ['user_id' => $user->id]);
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Le mot de passe actuel est incorrect.',
+                ], 422);
+            }
 
-        // Vérifier le mot de passe actuel
-        if (!Hash::check($validated['current_password'], $user->password)) {
+            // Mettre à jour le mot de passe
+            $user->update([
+                'password' => Hash::make($validated['password']),
+            ]);
+
+            Log::info('API Auth: Mot de passe change avec succes', ['user_id' => $user->id]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Mot de passe modifié avec succès.',
+            ]);
+        } catch (\Exception $e) {
+            Log::error('API Auth: Erreur changement mot de passe', [
+                'user_id' => $request->user()?->id,
+                'error' => $e->getMessage()
+            ]);
             return response()->json([
                 'success' => false,
-                'message' => 'Le mot de passe actuel est incorrect.',
-            ], 422);
+                'message' => 'Une erreur est survenue.',
+            ], 500);
         }
-
-        // Mettre à jour le mot de passe
-        $user->update([
-            'password' => Hash::make($validated['password']),
-        ]);
-
-        return response()->json([
-            'success' => true,
-            'message' => 'Mot de passe modifié avec succès.',
-        ]);
     }
 }
