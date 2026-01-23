@@ -8,11 +8,11 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
-class LocalCategory extends Model
+class Category extends Model
 {
     use HasFactory;
 
-    protected $table = 'local_categories';
+    protected $table = 'categories';
 
     protected $fillable = [
         'sync_id',
@@ -36,7 +36,7 @@ class LocalCategory extends Model
      */
     public function parent(): BelongsTo
     {
-        return $this->belongsTo(LocalCategory::class, 'parent_id');
+        return $this->belongsTo(Category::class, 'parent_id');
     }
 
     /**
@@ -44,7 +44,7 @@ class LocalCategory extends Model
      */
     public function children(): HasMany
     {
-        return $this->hasMany(LocalCategory::class, 'parent_id');
+        return $this->hasMany(Category::class, 'parent_id');
     }
 
     /**

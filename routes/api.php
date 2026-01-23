@@ -49,12 +49,19 @@ Route::prefix('proxy')->group(function () {
 // ============================================
 
 Route::prefix('local')->group(function () {
+    // Categories
+    Route::get('/categories', [LocalController::class, 'getCategories']);
+    Route::get('/categories/top', [LocalController::class, 'getTopCategories']);
+    Route::get('/categories/{id}', [LocalController::class, 'getCategory']);
+    
+    // Products
     Route::get('/products', [LocalController::class, 'getProducts']);
+    Route::get('/products/recent', [LocalController::class, 'getRecentProducts']);
+    Route::get('/products/random', [LocalController::class, 'getRandomProducts']);
     Route::get('/products/search/{query}', [LocalController::class, 'searchProducts']);
+    Route::get('/products/category/{categoryId}', [LocalController::class, 'getProductsByCategory']);
     Route::get('/products/{id}', [LocalController::class, 'getProduct']);
     Route::get('/products/{id}/related', [LocalController::class, 'getRelatedProducts']);
-    Route::get('/categories', [LocalController::class, 'getCategories']);
-    Route::get('/categories/{id}', [LocalController::class, 'getCategory']);
 });
 
 // ============================================
@@ -147,11 +154,11 @@ Route::middleware('auth:sanctum')->prefix('admin')->group(function () {
     Route::put('/promo-codes/{id}', [AdminController::class, 'updatePromoCode']);
     Route::delete('/promo-codes/{id}', [AdminController::class, 'deletePromoCode']);
     
-    // Local Categories Management
-    Route::get('/local-categories', [AdminController::class, 'getLocalCategories']);
-    Route::post('/local-categories', [AdminController::class, 'createLocalCategory']);
-    Route::put('/local-categories/{id}', [AdminController::class, 'updateLocalCategory']);
-    Route::delete('/local-categories/{id}', [AdminController::class, 'deleteLocalCategory']);
+    // Categories Management
+    Route::get('/categories', [AdminController::class, 'getCategories']);
+    Route::post('/categories', [AdminController::class, 'createCategory']);
+    Route::put('/categories/{id}', [AdminController::class, 'updateCategory']);
+    Route::delete('/categories/{id}', [AdminController::class, 'deleteCategory']);
     
     // Brands Management
     Route::get('/brands', [AdminController::class, 'getBrands']);

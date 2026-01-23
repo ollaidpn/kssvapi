@@ -42,10 +42,9 @@ class AuthController extends Controller
 
             $user = User::where('email', $request->email)->firstOrFail();
             
-            // Définir l'expiration selon le type de compte
-            // Admin: 60 minutes = 1 heure
-            // Client: 30 jours = 43200 minutes
-            $expirationMinutes = $user->account_type === 'admin' ? 60 : 43200;
+            // Expiration fixe: 30 jours pour tous les types de comptes
+            // La gestion d'inactivité admin se fait côté frontend si nécessaire
+            $expirationMinutes = 43200; // 30 jours = 43200 minutes
             $expiresAt = now()->addMinutes($expirationMinutes);
             
             // Créer le token avec expiration

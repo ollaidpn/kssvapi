@@ -4,7 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Item;
-use App\Models\LocalCategory;
+use App\Models\Category;
 use App\Models\Brand;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -14,6 +14,23 @@ use App\Helpers\Shortcut;
 class LocalController extends Controller
 {
     /**
+     * Apply global image filter if enabled in app settings
+     */
+    private function applyImageFilter($query): void
+    {
+        $appInfo = \App\Models\AppInfo::first();
+        if ($appInfo && $appInfo->show_only_with_images) {
+            $query->where(function($q) {
+                $q->whereNotNull('image')
+                  ->where('image', '!=', '')
+                  ->where('image', 'NOT LIKE', '%no-image%')
+                  ->where('image', 'NOT LIKE', '%aucune%')
+                  ->where('image', 'NOT LIKE', '%aucunimage%');
+            });
+        }
+    }
+
+    /**
      * Get paginated products with filters
      */
     public function getProducts(Request $request): JsonResponse
@@ -22,17 +39,8 @@ class LocalController extends Controller
             $query = Item::with(['category:id,name', 'brand:id,name'])
                 ->where('status', 'active');
             
-            // Global filter: show only products with valid images
-            $appInfo = \App\Models\AppInfo::first();
-            if ($appInfo && $appInfo->show_only_with_images) {
-                $query->where(function($q) {
-                    $q->whereNotNull('image')
-                      ->where('image', '!=', '')
-                      ->where('image', 'NOT LIKE', '%no-image%')
-                      ->where('image', 'NOT LIKE', '%aucune%')
-                      ->where('image', 'NOT LIKE', '%aucunimage%');
-                });
-            }
+            // Global filter
+            $this->applyImageFilter($query);
             
             // Filter by category
             if ($request->filled('category_id')) {
@@ -135,17 +143,8 @@ class LocalController extends Controller
                       ->orWhere('code', 'LIKE', "%{$query}%");
                 });
             
-            // Global filter: show only products with valid images
-            $appInfo = \App\Models\AppInfo::first();
-            if ($appInfo && $appInfo->show_only_with_images) {
-                $productQuery->where(function($q) {
-                    $q->whereNotNull('image')
-                      ->where('image', '!=', '')
-                      ->where('image', 'NOT LIKE', '%no-image%')
-                      ->where('image', 'NOT LIKE', '%aucune%')
-                      ->where('image', 'NOT LIKE', '%aucunimage%');
-                });
-            }
+            // Global filter
+            $this->applyImageFilter($productQuery);
             
             $products = $productQuery->orderBy('name')
                 ->limit(50)
@@ -172,6 +171,99 @@ class LocalController extends Controller
             ], 500);
         }
     }
+
+    /**
+     * Get recently added products
+     * Used for "Articles Récemment Ajoutés" section
+     */
+    public function getRecentProducts(Request $request): JsonResponse
+    {
+        try {
+            $limit = $request->get('limit', 30);
+            
+            $query = Item::with(['category:id,name'])
+                ->where('status', 'active');
+            
+            $this->applyImageFilter($query);
+            
+            $products = $query->orderByDesc('created_at')
+                ->limit($limit)
+                ->get();
+            
+            return response()->json([
+                'success' => true,
+                'data' => $products->map(fn($p) => $this->transformProduct($p))
+            ]);
+            
+        } catch (\Exception $e) {
+            Log::error('LocalController::getRecentProducts error', ['error' => $e->getMessage()]);
+            return response()->json(['success' => false, 'message' => 'Erreur'], 500);
+        }
+    }
+
+    /**
+     * Get random products (shuffled from database)
+     * Used for "Articles qui pourraient vous intéresser" section
+     */
+    public function getRandomProducts(Request $request): JsonResponse
+    {
+        try {
+            $limit = $request->get('limit', 50);
+            
+            $query = Item::with(['category:id,name'])
+                ->where('status', 'active');
+            
+            $this->applyImageFilter($query);
+            
+            // MySQL: ORDER BY RAND()
+            $products = $query->inRandomOrder()
+                ->limit($limit)
+                ->get();
+            
+            return response()->json([
+                'success' => true,
+                'data' => $products->map(fn($p) => $this->transformProduct($p))
+            ]);
+            
+        } catch (\Exception $e) {
+            Log::error('LocalController::getRandomProducts error', ['error' => $e->getMessage()]);
+            return response()->json(['success' => false, 'message' => 'Erreur'], 500);
+        }
+    }
+
+    /**
+     * Get products by category ID
+     * Used for "Produits Populaires" section
+     */
+    public function getProductsByCategory(int $categoryId, Request $request): JsonResponse
+    {
+        try {
+            $limit = $request->get('limit', 16);
+            
+            $query = Item::with(['category:id,name'])
+                ->where('status', 'active')
+                ->where('category_id', $categoryId);
+            
+            $this->applyImageFilter($query);
+            
+            // Always return in random order for variety
+            $products = $query->inRandomOrder()
+                ->limit($limit)
+                ->get();
+            
+            return response()->json([
+                'success' => true,
+                'data' => $products->map(fn($p) => $this->transformProduct($p))
+            ]);
+            
+        } catch (\Exception $e) {
+            Log::error('LocalController::getProductsByCategory error', [
+                'categoryId' => $categoryId,
+                'error' => $e->getMessage()
+            ]);
+            return response()->json(['success' => false, 'message' => 'Erreur'], 500);
+        }
+    }
     
     /**
      * Get all categories
@@ -179,7 +271,7 @@ class LocalController extends Controller
     public function getCategories(): JsonResponse
     {
         try {
-            $categories = LocalCategory::withCount('items')
+            $categories = Category::withCount('items')
                 ->orderBy('name')
                 ->get();
             
@@ -203,6 +295,36 @@ class LocalController extends Controller
             ], 500);
         }
     }
+
+    /**
+     * Get top categories with most products (random selection from top N)
+     * Used for HeroSection sidebar
+     */
+    public function getTopCategories(Request $request): JsonResponse
+    {
+        try {
+            $topCount = $request->get('top', 40);
+            $returnCount = $request->get('limit', 10);
+            
+            $categories = Category::withCount('items')
+                ->having('items_count', '>', 0)
+                ->orderByDesc('items_count')
+                ->limit($topCount)
+                ->get();
+            
+            // Shuffle and take the requested number
+            $shuffled = $categories->shuffle()->take($returnCount);
+            
+            return response()->json([
+                'success' => true,
+                'data' => $shuffled->map(fn($c) => $this->transformCategory($c))
+            ]);
+            
+        } catch (\Exception $e) {
+            Log::error('LocalController::getTopCategories error', ['error' => $e->getMessage()]);
+            return response()->json(['success' => false, 'message' => 'Erreur'], 500);
+        }
+    }
     
     /**
      * Get single category with products
@@ -210,7 +332,7 @@ class LocalController extends Controller
     public function getCategory(int $id): JsonResponse
     {
         try {
-            $category = LocalCategory::withCount('items')
+            $category = Category::withCount('items')
                 ->findOrFail($id);
             
             return response()->json([
@@ -245,17 +367,7 @@ class LocalController extends Controller
                 ->where('category_id', $product->category_id)
                 ->where('id', '!=', $productId);
             
-            // Global filter: show only products with valid images
-            $appInfo = \App\Models\AppInfo::first();
-            if ($appInfo && $appInfo->show_only_with_images) {
-                $relatedQuery->where(function($q) {
-                    $q->whereNotNull('image')
-                      ->where('image', '!=', '')
-                      ->where('image', 'NOT LIKE', '%no-image%')
-                      ->where('image', 'NOT LIKE', '%aucune%')
-                      ->where('image', 'NOT LIKE', '%aucunimage%');
-                });
-            }
+            $this->applyImageFilter($relatedQuery);
             
             $relatedProducts = $relatedQuery->limit($limit)->get();
             
@@ -332,7 +444,7 @@ class LocalController extends Controller
     /**
      * Transform category model to API response format
      */
-    private function transformCategory(LocalCategory $category): array
+    private function transformCategory(Category $category): array
     {
         $baseUrl = config('app.url');
         

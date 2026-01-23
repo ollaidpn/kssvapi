@@ -12,7 +12,7 @@ use App\Models\Payment;
 use App\Models\Section;
 use App\Models\AppInfo;
 use App\Models\PromoCode;
-use App\Models\LocalCategory;
+use App\Models\Category;
 use App\Models\Brand;
 use App\Models\Item;
 use App\Models\Synchronization;
@@ -1130,13 +1130,13 @@ class AdminController extends Controller
     // ============================================
 
     /**
-     * GET /api/admin/local-categories
-     * Liste des catégories locales
+     * GET /api/admin/categories
+     * Liste des catégories
      */
-    public function getLocalCategories(Request $request): JsonResponse
+    public function getCategories(Request $request): JsonResponse
     {
         try {
-            $categories = LocalCategory::withCount('items')
+            $categories = Category::withCount('items')
                 ->orderBy('name')
                 ->get()
                 ->map(function ($cat) {
@@ -1158,19 +1158,19 @@ class AdminController extends Controller
     }
 
     /**
-     * POST /api/admin/local-categories
+     * POST /api/admin/categories
      * Créer une catégorie
      */
-    public function createLocalCategory(Request $request): JsonResponse
+    public function createCategory(Request $request): JsonResponse
     {
         try {
             $validated = $request->validate([
                 'name' => 'required|string|max:255',
                 'logo' => 'nullable|string',
-                'parent_id' => 'nullable|integer|exists:local_categories,id',
+                'parent_id' => 'nullable|integer|exists:categories,id',
             ]);
 
-            $category = LocalCategory::create($validated);
+            $category = Category::create($validated);
 
             Log::info('API Admin: Catégorie créée', ['category_id' => $category->id]);
 
@@ -1186,13 +1186,13 @@ class AdminController extends Controller
     }
 
     /**
-     * PUT /api/admin/local-categories/{id}
+     * PUT /api/admin/categories/{id}
      * Modifier une catégorie
      */
-    public function updateLocalCategory(Request $request, int $id): JsonResponse
+    public function updateCategory(Request $request, int $id): JsonResponse
     {
         try {
-            $category = LocalCategory::find($id);
+            $category = Category::find($id);
             if (!$category) {
                 return response()->json(['success' => false, 'message' => 'Catégorie non trouvée'], 404);
             }
@@ -1200,7 +1200,7 @@ class AdminController extends Controller
             $validated = $request->validate([
                 'name' => 'required|string|max:255',
                 'logo' => 'nullable|string',
-                'parent_id' => 'nullable|integer|exists:local_categories,id',
+                'parent_id' => 'nullable|integer|exists:categories,id',
             ]);
 
             // Éviter auto-référence
@@ -1224,13 +1224,13 @@ class AdminController extends Controller
     }
 
     /**
-     * DELETE /api/admin/local-categories/{id}
+     * DELETE /api/admin/categories/{id}
      * Supprimer une catégorie
      */
-    public function deleteLocalCategory(int $id): JsonResponse
+    public function deleteCategory(int $id): JsonResponse
     {
         try {
-            $category = LocalCategory::find($id);
+            $category = Category::find($id);
             if (!$category) {
                 return response()->json(['success' => false, 'message' => 'Catégorie non trouvée'], 404);
             }
@@ -1856,7 +1856,7 @@ class AdminController extends Controller
         $categoryId = null;
         if (!empty($data['id_categorie'])) {
             // Chercher la catégorie locale par son og_id (plus robuste)
-            $localCat = LocalCategory::where('og_id', (string)$data['id_categorie'])->first();
+            $localCat = Category::where('og_id', (string)$data['id_categorie'])->first();
             if ($localCat) {
                 $categoryId = $localCat->id;
             }
@@ -1901,7 +1901,7 @@ class AdminController extends Controller
     }
 
     /**
-     * Applique une catégorie synchronisée vers la table locale LocalCategory
+     * Applique une catégorie synchronisée vers la table locale Category
      */
     private function applyCategoryToLocal(Synchronization $sync): void
     {
@@ -1922,7 +1922,7 @@ class AdminController extends Controller
         $finalLogo = $localLogo ?? 'no-image.png';
 
         // Créer ou mettre à jour la catégorie via og_id (évite les doublons)
-        LocalCategory::updateOrCreate(
+        Category::updateOrCreate(
             ['og_id' => $ogId],
             [
                 'sync_id' => $sync->id,
