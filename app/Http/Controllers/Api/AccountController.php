@@ -385,6 +385,26 @@ class AccountController extends Controller
                         'message' => $paymentResult['message'] ?? 'Erreur lors de l\'initialisation du paiement'
                     ], 500);
                 }
+
+                // Créer le paiement en statut pending
+                $payment = Payment::create([
+                    'order_id' => $order->id,
+                    'amount' => $order->total,
+                    'paid_by' => $paymentMethod,
+                    'date' => now(),
+                    'reference' => $order->reference,
+                    'status' => 'pending',
+                    'payment_link' => $paymentResult['payment_link'] ?? null,
+                    'expires_at' => isset($paymentResult['when_expires']) 
+                        ? \Carbon\Carbon::parse($paymentResult['when_expires']) 
+                        : null,
+                ]);
+
+                Log::info('API Account: Paiement pending créé', [
+                    'payment_id' => $payment->id,
+                    'order_id' => $order->id,
+                    'payment_link' => $paymentResult['payment_link'] ?? null
+                ]);
                 
                 // Retourner les infos de paiement Fayko
                 return response()->json([
@@ -393,11 +413,12 @@ class AccountController extends Controller
                     'data' => [
                         'order_id' => $order->id,
                         'reference' => $order->reference,
+                        'payment_id' => $payment->id,
                         'total' => (float) $order->total,
                         'status' => 'processing',
-                        'payment_link' => $paymentResult['payment_link'],
-                        'payment_qrcode_base64' => $paymentResult['payment_qrcode_base64'],
-                        'when_expires' => $paymentResult['when_expires'],
+                        'payment_link' => $paymentResult['payment_link'] ?? null,
+                        'payment_qrcode_base64' => $paymentResult['payment_qrcode_base64'] ?? null,
+                        'when_expires' => $paymentResult['when_expires'] ?? null,
                     ]
                 ], 201);
             }
@@ -506,6 +527,11 @@ class AccountController extends Controller
             // Annuler la commande
             $order->status = 'cancelled';
             $order->save();
+
+            // Annuler les paiements en attente
+            Payment::where('order_id', $order->id)
+                ->where('status', 'pending')
+                ->update(['status' => 'cancelled']);
             
             // Remettre les articles dans le panier
             Cart::where('order_id', $order->id)->update([

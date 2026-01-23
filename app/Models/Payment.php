@@ -17,12 +17,17 @@ class Payment extends Model
         'paid_by',
         'date',
         'reference',
+        'transaction_id',
+        'status',
+        'payment_link',
+        'expires_at',
     ];
 
     protected $searchableFields = ['*'];
 
     protected $casts = [
         'date' => 'date',
+        'expires_at' => 'datetime',
     ];
 
     public function order()

@@ -65,17 +65,41 @@ class WebhookController extends Controller
             // Mettre à jour selon le statut
             if ($status === 'success') {
                 $order->status = 'paid';
-                $order->transaction_id = $transactionId;
                 $order->save();
 
-                // Créer l'entrée de paiement
-                Payment::create([
-                    'order_id' => $order->id,
-                    'amount' => $amount ?? $order->total,
-                    'paid_by' => $order->payment_method,
-                    'date' => now(),
-                    'reference' => $transactionId,
-                ]);
+                // Mettre à jour le paiement existant (créé lors de la commande)
+                $payment = Payment::where('order_id', $order->id)
+                    ->where('status', 'pending')
+                    ->first();
+
+                if ($payment) {
+                    $payment->update([
+                        'transaction_id' => $transactionId,
+                        'status' => 'success',
+                        'date' => now(),
+                    ]);
+
+                    Log::info('Webhook Fayko: Paiement existant mis à jour', [
+                        'payment_id' => $payment->id,
+                        'transaction_id' => $transactionId
+                    ]);
+                } else {
+                    // Fallback: créer le paiement si pas trouvé
+                    Payment::create([
+                        'order_id' => $order->id,
+                        'amount' => $amount ?? $order->total,
+                        'paid_by' => $order->payment_method,
+                        'date' => now(),
+                        'reference' => $order->reference,
+                        'transaction_id' => $transactionId,
+                        'status' => 'success',
+                    ]);
+
+                    Log::info('Webhook Fayko: Nouveau paiement créé (fallback)', [
+                        'order_id' => $order->id,
+                        'transaction_id' => $transactionId
+                    ]);
+                }
 
                 Log::info('Webhook Fayko: Paiement réussi', [
                     'order_id' => $order->id,
@@ -86,8 +110,15 @@ class WebhookController extends Controller
             } else {
                 // Statut d'échec ou autre
                 $order->status = 'failed';
-                $order->transaction_id = $transactionId;
                 $order->save();
+
+                // Marquer le paiement comme échoué
+                Payment::where('order_id', $order->id)
+                    ->where('status', 'pending')
+                    ->update([
+                        'transaction_id' => $transactionId,
+                        'status' => 'failed',
+                    ]);
 
                 Log::info('Webhook Fayko: Paiement échoué', [
                     'order_id' => $order->id,
