@@ -351,16 +351,16 @@ class AccountController extends Controller
             if (in_array($paymentMethod, ['wave_senegal', 'orange_money_senegal'])) {
                 $faykoService = new FaykoPaymentService();
                 
-                // Calculer le nombre total d'articles
-                $totalQty = $cartItems->sum('quantity');
+                // Construire la description avec la liste des articles
+                $description = $this->buildOrderDescription($cartItems);
                 
                 $paymentResult = $faykoService->makePayment([
                     'payment_method' => $paymentMethod,
-                    'amount' => $total,
-                    'qty' => $totalQty,
+                    'amount' => (int) $total,  // Entier, pas de décimales
+                    'qty' => 1,  // Toujours 1 pour une commande globale
                     'client_name' => $user->name ?? 'Client',
-                    'name' => 'Commande ' . $reference,
-                    'description' => 'Commande de ' . $cartItems->count() . ' article(s) sur KSSV',
+                    'name' => 'Commande KSSV',
+                    'description' => $description,
                     'ccphone' => '+221',
                     'phone' => $user->phone ?? '',
                     'extra_data' => [
@@ -571,5 +571,19 @@ class AccountController extends Controller
                 'message' => 'Erreur lors de l\'annulation'
             ], 500);
         }
+    }
+    
+    /**
+     * Construire la description de la commande pour Fayko
+     */
+    private function buildOrderDescription($cartItems): string
+    {
+        $lines = [];
+        foreach ($cartItems as $item) {
+            $infos = $item->item_infos ?? [];
+            $name = $infos['name'] ?? 'Article';
+            $lines[] = "{$item->qty}x {$name}";
+        }
+        return implode(', ', $lines);
     }
 }
