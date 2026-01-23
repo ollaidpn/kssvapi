@@ -398,27 +398,19 @@ class LocalController extends Controller
      */
     private function transformProduct(Item $item): array
     {
-        $baseUrl = config('app.url');
+        // Shortcut::fileExistsOnServer retourne directement l'URL complète
+        $image = Shortcut::fileExistsOnServer($item->image);
         
-        // Build image URL
-        $image = $item->image;
-        if ($image && !str_starts_with($image, 'http')) {
-            $image = Shortcut::fileExistsOnServer($image) 
-                ? $baseUrl . '/' . $image 
-                : ($item->original_image ?? $baseUrl . '/no-image.png');
+        // Si le fichier n'existe pas localement mais qu'on a l'original
+        if (str_contains($image, 'no-image.png') && !empty($item->original_image)) {
+            $image = $item->original_image;
         }
         
         // Build gallery URLs
         $images = [];
         if (!empty($item->images) && is_array($item->images)) {
             foreach ($item->images as $img) {
-                if ($img && !str_starts_with($img, 'http')) {
-                    $images[] = Shortcut::fileExistsOnServer($img) 
-                        ? $baseUrl . '/' . $img 
-                        : $img;
-                } else {
-                    $images[] = $img;
-                }
+                $images[] = Shortcut::fileExistsOnServer($img);
             }
         }
         
@@ -431,7 +423,7 @@ class LocalController extends Controller
             'price' => (float) $item->price,
             'sale_price' => $item->sale_price ? (float) $item->sale_price : null,
             'stock' => (int) ($item->stock ?? 0),
-            'image' => $image ?? $baseUrl . '/no-image.png',
+            'image' => $image,
             'gallery' => $images,
             'category_id' => $item->category_id,
             'category_name' => $item->category?->name,
@@ -446,20 +438,19 @@ class LocalController extends Controller
      */
     private function transformCategory(Category $category): array
     {
-        $baseUrl = config('app.url');
+        // Shortcut::fileExistsOnServer retourne directement l'URL complète
+        $logo = Shortcut::fileExistsOnServer($category->logo);
         
-        $logo = $category->logo;
-        if ($logo && !str_starts_with($logo, 'http')) {
-            $logo = Shortcut::fileExistsOnServer($logo) 
-                ? $baseUrl . '/' . $logo 
-                : ($category->original_logo ?? $baseUrl . '/no-image.png');
+        // Si pas de logo local mais original disponible
+        if (str_contains($logo, 'no-image.png') && !empty($category->original_logo)) {
+            $logo = $category->original_logo;
         }
         
         return [
             'id' => $category->id,
             'sync_id' => $category->sync_id,
             'name' => $category->name,
-            'logo' => $logo ?? $baseUrl . '/no-image.png',
+            'logo' => $logo,
             'parent_id' => $category->parent_id,
             'items_count' => $category->items_count ?? 0,
         ];
