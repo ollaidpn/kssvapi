@@ -346,4 +346,67 @@ class AuthController extends Controller
             'message' => 'Un nouveau code a été envoyé à votre adresse email.',
         ]);
     }
+
+    /**
+     * PUT /api/auth/profile
+     * Mettre à jour les informations du client
+     */
+    public function updateProfile(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'name' => 'required|string|max:255',
+            'ccphone' => 'required|string|max:5',
+            'phone' => 'required|string|max:20',
+        ]);
+
+        $user = $request->user();
+        $user->update($validated);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Profil mis à jour avec succès.',
+            'user' => [
+                'id' => $user->id,
+                'name' => $user->name,
+                'email' => $user->email,
+                'ccphone' => $user->ccphone,
+                'phone' => $user->phone,
+                'account_type' => $user->account_type,
+                'reference' => $user->reference,
+                'avatar' => $user->avatar,
+            ],
+        ]);
+    }
+
+    /**
+     * PUT /api/auth/password
+     * Changer le mot de passe du client connecté
+     */
+    public function updatePassword(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'current_password' => 'required|string',
+            'password' => 'required|string|min:8|confirmed',
+        ]);
+
+        $user = $request->user();
+
+        // Vérifier le mot de passe actuel
+        if (!Hash::check($validated['current_password'], $user->password)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Le mot de passe actuel est incorrect.',
+            ], 422);
+        }
+
+        // Mettre à jour le mot de passe
+        $user->update([
+            'password' => Hash::make($validated['password']),
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Mot de passe modifié avec succès.',
+        ]);
+    }
 }
