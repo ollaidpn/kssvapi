@@ -192,4 +192,16 @@ Route::middleware('auth:sanctum')->prefix('admin')->group(function () {
     Route::get('/synchronizations/count-pending', [AdminController::class, 'countPendingMigrations']);
     Route::delete('/synchronizations', [AdminController::class, 'deleteSyncEntries']);
     Route::delete('/synchronizations/{id}', [AdminController::class, 'deleteSyncEntry']);
+    
+    // Admin Users Management
+    Route::get('/users', [AdminController::class, 'getAdmins']);
+    Route::post('/users', [AdminController::class, 'createAdmin']);
+    Route::delete('/users/{id}', [AdminController::class, 'deleteAdmin']);
+    Route::post('/users/{id}/resend-invitation', [AdminController::class, 'resendAdminInvitation']);
 });
+
+// ============================================
+// Public Admin Routes (No Auth Required)
+// ============================================
+
+Route::post('/admin/activate', [AdminController::class, 'activateAdmin']);

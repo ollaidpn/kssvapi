@@ -386,6 +386,7 @@ class AdminController extends Controller
                 'pending' => Order::where('status', 'pending')->count(),
                 'pending_payment' => Order::where('status', 'pending_payment')->count(),
                 'processing' => Order::where('status', 'processing')->count(),
+                'paid' => Order::where('status', 'paid')->count(),
                 'completed' => Order::where('status', 'completed')->count(),
                 'delivered' => Order::where('status', 'delivered')->count(),
                 'cancelled' => Order::where('status', 'cancelled')->count(),
@@ -516,7 +517,7 @@ class AdminController extends Controller
     {
         try {
             $validated = $request->validate([
-                'status' => 'required|string|in:pending,pending_payment,processing,completed,delivered,cancelled',
+                'status' => 'required|string|in:pending,pending_payment,processing,paid,completed,delivered,cancelled',
             ]);
             
             $order = Order::findOrFail($id);
@@ -2068,6 +2069,209 @@ class AdminController extends Controller
                 'message' => "$deleted entrée(s) supprimée(s)"
             ]);
         } catch (\Exception $e) {
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
+        }
+    }
+
+    // ============================================
+    // Admin Users Management
+    // ============================================
+
+    /**
+     * GET /api/admin/users
+     * Liste des administrateurs
+     */
+    public function getAdmins(Request $request): JsonResponse
+    {
+        try {
+            Log::info('API Admin: Liste des administrateurs', ['admin_id' => $request->user()?->id]);
+            
+            $admins = User::where('account_type', 'admin')
+                ->latest()
+                ->get()
+                ->map(fn($u) => [
+                    'id' => $u->id,
+                    'name' => $u->name,
+                    'email' => $u->email,
+                    'ccphone' => $u->ccphone ?? '',
+                    'phone' => $u->phone ?? '',
+                    'is_active' => !empty($u->password),
+                    'created_at' => $u->created_at->format('Y-m-d'),
+                ]);
+            
+            return response()->json(['success' => true, 'data' => $admins]);
+        } catch (\Exception $e) {
+            Log::error('API Admin: Erreur liste admins', ['error' => $e->getMessage()]);
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * POST /api/admin/users
+     * Créer un nouvel administrateur (invitation)
+     */
+    public function createAdmin(Request $request): JsonResponse
+    {
+        try {
+            $validated = $request->validate([
+                'name' => 'required|string|max:255',
+                'email' => 'required|email|unique:users,email',
+                'ccphone' => 'required|string',
+                'phone' => 'required|string',
+            ]);
+            
+            Log::info('API Admin: Création admin', ['email' => $validated['email']]);
+            
+            // Créer l'utilisateur sans mot de passe
+            $activationToken = Str::random(64);
+            
+            $admin = User::create([
+                'name' => $validated['name'],
+                'email' => $validated['email'],
+                'password' => '', // Vide, sera défini lors de l'activation
+                'ccphone' => $validated['ccphone'],
+                'phone' => $validated['phone'],
+                'account_type' => 'admin',
+                'reference' => 'ADMIN-' . strtoupper(Str::random(6)),
+                'activation_token' => $activationToken,
+                'activation_token_expires_at' => now()->addHours(72),
+            ]);
+            
+            // Envoyer l'email d'invitation
+            \Mail::to($admin->email)->send(new \App\Mail\AdminInvitationMail($admin, $activationToken));
+            
+            Log::info('API Admin: Admin créé et invitation envoyée', ['admin_id' => $admin->id]);
+            
+            return response()->json([
+                'success' => true,
+                'message' => 'Invitation envoyée avec succès.',
+            ]);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => $e->errors()['email'][0] ?? 'Erreur de validation',
+            ], 422);
+        } catch (\Exception $e) {
+            Log::error('API Admin: Erreur création admin', ['error' => $e->getMessage()]);
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * DELETE /api/admin/users/{id}
+     * Supprimer un administrateur
+     */
+    public function deleteAdmin(Request $request, int $id): JsonResponse
+    {
+        try {
+            $admin = User::where('account_type', 'admin')->find($id);
+            
+            if (!$admin) {
+                return response()->json(['success' => false, 'message' => 'Administrateur non trouvé'], 404);
+            }
+            
+            // Ne pas permettre de supprimer son propre compte
+            if ($request->user()?->id === $id) {
+                return response()->json(['success' => false, 'message' => 'Vous ne pouvez pas supprimer votre propre compte'], 403);
+            }
+            
+            Log::info('API Admin: Suppression admin', ['admin_id' => $id]);
+            
+            $admin->delete();
+            
+            return response()->json(['success' => true, 'message' => 'Administrateur supprimé']);
+        } catch (\Exception $e) {
+            Log::error('API Admin: Erreur suppression admin', ['error' => $e->getMessage()]);
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * POST /api/admin/users/{id}/resend-invitation
+     * Renvoyer l'invitation à un admin
+     */
+    public function resendAdminInvitation(Request $request, int $id): JsonResponse
+    {
+        try {
+            $admin = User::where('account_type', 'admin')
+                ->where('password', '')
+                ->find($id);
+            
+            if (!$admin) {
+                return response()->json(['success' => false, 'message' => 'Administrateur non trouvé ou déjà activé'], 404);
+            }
+            
+            // Générer un nouveau token
+            $activationToken = Str::random(64);
+            $admin->update([
+                'activation_token' => $activationToken,
+                'activation_token_expires_at' => now()->addHours(72),
+            ]);
+            
+            // Envoyer l'email
+            \Mail::to($admin->email)->send(new \App\Mail\AdminInvitationMail($admin, $activationToken));
+            
+            Log::info('API Admin: Invitation renvoyée', ['admin_id' => $id]);
+            
+            return response()->json(['success' => true, 'message' => 'Invitation renvoyée avec succès']);
+        } catch (\Exception $e) {
+            Log::error('API Admin: Erreur renvoi invitation', ['error' => $e->getMessage()]);
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * POST /api/admin/activate (public route)
+     * Activer un compte admin (définir mot de passe)
+     */
+    public function activateAdmin(Request $request): JsonResponse
+    {
+        try {
+            $validated = $request->validate([
+                'email' => 'required|email',
+                'token' => 'required|string',
+                'password' => 'required|min:8|confirmed',
+            ]);
+            
+            $admin = User::where('email', $validated['email'])
+                ->where('account_type', 'admin')
+                ->where('activation_token', $validated['token'])
+                ->where('activation_token_expires_at', '>', now())
+                ->first();
+            
+            if (!$admin) {
+                Log::warning('API Admin: Token activation invalide', ['email' => $validated['email']]);
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Lien d\'activation invalide ou expiré.',
+                ], 400);
+            }
+            
+            $admin->update([
+                'password' => \Hash::make($validated['password']),
+                'activation_token' => null,
+                'activation_token_expires_at' => null,
+                'email_verified_at' => now(),
+            ]);
+            
+            // Créer un token de connexion
+            $token = $admin->createToken('auth-token')->plainTextToken;
+            
+            Log::info('API Admin: Compte admin activé', ['admin_id' => $admin->id]);
+            
+            return response()->json([
+                'success' => true,
+                'message' => 'Compte activé avec succès !',
+                'token' => $token,
+                'user' => [
+                    'id' => $admin->id,
+                    'name' => $admin->name,
+                    'email' => $admin->email,
+                    'account_type' => $admin->account_type,
+                ],
+            ]);
+        } catch (\Exception $e) {
+            Log::error('API Admin: Erreur activation admin', ['error' => $e->getMessage()]);
             return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
         }
     }
