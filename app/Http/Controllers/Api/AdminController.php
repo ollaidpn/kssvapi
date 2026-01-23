@@ -11,6 +11,7 @@ use App\Models\Cart;
 use App\Models\Payment;
 use App\Models\Section;
 use App\Models\AppInfo;
+use App\Helpers\Shortcut;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 
@@ -307,7 +308,7 @@ class AdminController extends Controller
                         'ccphone' => $client->ccphone,
                         'phone' => $client->phone,
                         'reference' => $client->reference,
-                        'avatar' => $client->avatar,
+                        'avatar' => Shortcut::fileExistsOnServer($client->avatar),
                         'created_at' => $client->created_at->format('Y-m-d'),
                     ],
                     'stats' => [
@@ -659,7 +660,11 @@ class AdminController extends Controller
                 $query->whereIn('type', $typesArray);
             }
             
-            $sections = $query->orderBy('type')->orderBy('id')->get();
+            $sections = $query->orderBy('type')->orderBy('id')->get()->map(function($section) {
+                $section->image1 = Shortcut::fileExistsOnServer($section->image1);
+                $section->image2 = Shortcut::fileExistsOnServer($section->image2);
+                return $section;
+            });
             
             return response()->json([
                 'success' => true,
@@ -704,6 +709,10 @@ class AdminController extends Controller
             }
             
             $section->save();
+            
+            // Transformer les URLs des images avant de retourner
+            $section->image1 = Shortcut::fileExistsOnServer($section->image1);
+            $section->image2 = Shortcut::fileExistsOnServer($section->image2);
             
             Log::info('API Admin: Section mise à jour', ['section_id' => $id]);
             
@@ -758,6 +767,10 @@ class AdminController extends Controller
                 }
             }
             $section->save();
+            
+            // Transformer les URLs des images avant de retourner
+            $section->image1 = Shortcut::fileExistsOnServer($section->image1);
+            $section->image2 = Shortcut::fileExistsOnServer($section->image2);
             
             Log::info('API Admin: Section créée', ['section_id' => $section->id]);
             
@@ -824,6 +837,12 @@ class AdminController extends Controller
             
             $appInfo = AppInfo::first();
             
+            // Transformer les URLs des logos avant de retourner
+            if ($appInfo) {
+                $appInfo->logo_color = Shortcut::fileExistsOnServer($appInfo->logo_color);
+                $appInfo->logo_white = Shortcut::fileExistsOnServer($appInfo->logo_white);
+            }
+            
             return response()->json([
                 'success' => true,
                 'data' => $appInfo
@@ -874,6 +893,10 @@ class AdminController extends Controller
             }
             
             $appInfo->save();
+            
+            // Transformer les URLs des logos avant de retourner
+            $appInfo->logo_color = Shortcut::fileExistsOnServer($appInfo->logo_color);
+            $appInfo->logo_white = Shortcut::fileExistsOnServer($appInfo->logo_white);
             
             Log::info('API Admin: AppInfo mise à jour', ['app_info_id' => $appInfo->id]);
             

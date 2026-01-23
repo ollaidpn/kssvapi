@@ -6,6 +6,7 @@ use App\Models\User;
 use App\Models\OtpCode;
 use App\Mail\OtpMail;
 use App\Mail\WelcomeMail;
+use App\Helpers\Shortcut;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use App\Http\Controllers\Controller;
@@ -70,7 +71,7 @@ class AuthController extends Controller
                     'phone' => $user->phone,
                     'account_type' => $user->account_type,
                     'reference' => $user->reference,
-                    'avatar' => $user->avatar,
+                    'avatar' => Shortcut::fileExistsOnServer($user->avatar),
                 ],
             ]);
         } catch (\Exception $e) {
@@ -259,7 +260,7 @@ class AuthController extends Controller
                     'phone' => $user->phone,
                     'account_type' => $user->account_type,
                     'reference' => $user->reference,
-                    'avatar' => $user->avatar,
+                    'avatar' => Shortcut::fileExistsOnServer($user->avatar),
                 ],
             ]);
         } catch (\Exception $e) {
@@ -428,7 +429,7 @@ class AuthController extends Controller
                 'phone' => $user->phone,
                 'account_type' => $user->account_type,
                 'reference' => $user->reference,
-                'avatar' => $user->avatar,
+                'avatar' => Shortcut::fileExistsOnServer($user->avatar),
             ],
         ]);
     }
