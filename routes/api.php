@@ -62,8 +62,11 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::put('/auth/profile', [AuthController::class, 'updateProfile']);
     Route::put('/auth/password', [AuthController::class, 'updatePassword']);
 
-    // Account Dashboard
+    // Account Dashboard & Orders & Payments
     Route::get('/account/dashboard', [AccountController::class, 'dashboard']);
+    Route::get('/account/orders', [AccountController::class, 'orders']);
+    Route::get('/account/orders/{id}', [AccountController::class, 'orderDetail']);
+    Route::get('/account/payments', [AccountController::class, 'payments']);
 
     // Cart
     Route::get('/cart', [CartController::class, 'index']);

@@ -19,6 +19,7 @@ class AuthController extends Controller
 {
     /**
      * Login with email and password
+     * Token expiration: Admin = 60 minutes, Client = 30 jours
      */
     public function login(Request $request): JsonResponse
     {
@@ -39,14 +40,28 @@ class AuthController extends Controller
             }
 
             $user = User::where('email', $request->email)->firstOrFail();
-            $token = $user->createToken('auth-token');
+            
+            // Définir l'expiration selon le type de compte
+            // Admin: 60 minutes = 1 heure
+            // Client: 30 jours = 43200 minutes
+            $expirationMinutes = $user->account_type === 'admin' ? 60 : 43200;
+            $expiresAt = now()->addMinutes($expirationMinutes);
+            
+            // Créer le token avec expiration
+            $token = $user->createToken('auth-token', ['*'], $expiresAt);
 
-            Log::info('API Auth: Connexion reussie', ['user_id' => $user->id, 'email' => $user->email, 'account_type' => $user->account_type]);
+            Log::info('API Auth: Connexion reussie', [
+                'user_id' => $user->id,
+                'email' => $user->email,
+                'account_type' => $user->account_type,
+                'token_expires_at' => $expiresAt->toDateTimeString()
+            ]);
 
             return response()->json([
                 'success' => true,
                 'message' => 'Connexion réussie',
                 'token' => $token->plainTextToken,
+                'expires_at' => $expiresAt->toIso8601String(),
                 'user' => [
                     'id' => $user->id,
                     'name' => $user->name,
@@ -220,19 +235,22 @@ class AuthController extends Controller
             // Send welcome email
             Mail::to($user->email)->send(new WelcomeMail($user));
 
-            // Create token
-            $token = $user->createToken('auth-token');
+            // Create token with 30 days expiration for clients
+            $expiresAt = now()->addDays(30);
+            $token = $user->createToken('auth-token', ['*'], $expiresAt);
 
             Log::info('API Auth: Nouveau compte cree avec succes', [
                 'user_id' => $user->id,
                 'email' => $user->email,
-                'reference' => $user->reference
+                'reference' => $user->reference,
+                'token_expires_at' => $expiresAt->toDateTimeString()
             ]);
 
             return response()->json([
                 'success' => true,
                 'message' => 'Compte créé avec succès ! Bienvenue chez KSSV.',
                 'token' => $token->plainTextToken,
+                'expires_at' => $expiresAt->toIso8601String(),
                 'user' => [
                     'id' => $user->id,
                     'name' => $user->name,
