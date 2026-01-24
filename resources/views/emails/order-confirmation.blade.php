@@ -76,18 +76,27 @@
                                 
                                 <!-- Totals -->
                                 <div style="background-color: #f8f9fa; padding: 16px 20px;">
-                                    @if($order->discount > 0)
+                                    @php
+                                        $subtotal = $order->total + $order->discount - ($order->delivery_fee ?? 0);
+                                    @endphp
                                     <table role="presentation" style="width: 100%; border-collapse: collapse;">
                                         <tr>
                                             <td style="padding: 4px 0; color: #666666; font-size: 14px;">Sous-total</td>
-                                            <td style="padding: 4px 0; text-align: right; color: #333333; font-size: 14px;">{{ number_format($order->total + $order->discount, 0, '', ' ') }} FCFA</td>
+                                            <td style="padding: 4px 0; text-align: right; color: #333333; font-size: 14px;">{{ number_format($subtotal, 0, '', ' ') }} FCFA</td>
                                         </tr>
+                                        @if($order->discount > 0)
                                         <tr>
                                             <td style="padding: 4px 0; color: #16a34a; font-size: 14px;">Réduction</td>
                                             <td style="padding: 4px 0; text-align: right; color: #16a34a; font-size: 14px;">-{{ number_format($order->discount, 0, '', ' ') }} FCFA</td>
                                         </tr>
+                                        @endif
+                                        @if(($order->delivery_fee ?? 0) > 0)
+                                        <tr>
+                                            <td style="padding: 4px 0; color: #fd7f07; font-size: 14px;">Frais de livraison</td>
+                                            <td style="padding: 4px 0; text-align: right; color: #fd7f07; font-size: 14px;">+{{ number_format($order->delivery_fee, 0, '', ' ') }} FCFA</td>
+                                        </tr>
+                                        @endif
                                     </table>
-                                    @endif
                                     <table role="presentation" style="width: 100%; border-collapse: collapse; margin-top: 8px;">
                                         <tr>
                                             <td style="padding: 8px 0; color: #000080; font-size: 18px; font-weight: 700;">Total</td>
@@ -117,6 +126,25 @@
                                 </p>
                             </div>
                             @endif
+
+                            <!-- CTA Button -->
+                            <table role="presentation" style="width: 100%; border-collapse: collapse;">
+                                <tr>
+                                    <td align="center">
+                                        <table role="presentation" style="border-collapse: collapse;">
+                                            <tr>
+                                                <td style="border-radius: 8px; background: linear-gradient(135deg, #fd7f07 0%, #e56b00 100%);">
+                                                    <a href="{{ $frontendUrl }}/account"
+                                                       target="_blank"
+                                                       style="display: inline-block; padding: 16px 40px; font-size: 16px; font-weight: 600; color: #ffffff; text-decoration: none;">
+                                                        Suivre ma commande
+                                                    </a>
+                                                </td>
+                                            </tr>
+                                        </table>
+                                    </td>
+                                </tr>
+                            </table>
                         </td>
                     </tr>
 

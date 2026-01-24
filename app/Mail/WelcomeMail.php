@@ -15,13 +15,15 @@ class WelcomeMail extends Mailable
     use Queueable, SerializesModels;
 
     public User $user;
+    public string $frontendUrl;
 
     /**
      * Create a new message instance.
      */
-    public function __construct(User $user)
+    public function __construct(User $user, ?string $frontendUrl = null)
     {
         $this->user = $user;
+        $this->frontendUrl = $frontendUrl ?? config('app.frontend_url', config('app.url'));
     }
 
     /**

@@ -49,6 +49,96 @@ class NotificationsService
     }
 
     /**
+     * Formater et valider un numéro de téléphone selon le format Intech SMS
+     * 
+     * Format attendu par Intech: +221XXXXXXXXX (format international avec +)
+     * 
+     * Gère les cas suivants:
+     * - ccphone=221, phone=771234567 → +221771234567
+     * - ccphone=+221, phone=771234567 → +221771234567
+     * - phone=+221771234567 → +221771234567
+     * - phone=221771234567 → +221771234567
+     * - phone=00221771234567 → +221771234567
+     *
+     * @param string|null $ccphone Code pays (ex: 221, +221)
+     * @param string|null $phone Numéro (ex: 771234567 ou +221771234567)
+     * @return string|null Numéro formaté (+221771234567) ou null si invalide
+     */
+    public function formatPhoneNumber(?string $ccphone, ?string $phone): ?string
+    {
+        // Vérifier que le numéro existe
+        if (empty($phone)) {
+            Log::warning('SMS: Numéro de téléphone vide', ['ccphone' => $ccphone, 'phone' => $phone]);
+            return null;
+        }
+        
+        // Supprimer tous les caractères non numériques (espaces, +, tirets, etc.)
+        $phone = preg_replace('/[^0-9]/', '', $phone);
+        
+        // Si le numéro commence par 00221, supprimer le 00 (format international alternatif)
+        if (str_starts_with($phone, '00221')) {
+            $phone = substr($phone, 2); // Devient 221XXXXXXX
+        }
+        
+        // Si le numéro contient déjà 221 au début (221771234567), c'est un numéro complet
+        if (str_starts_with($phone, '221') && strlen($phone) >= 12) {
+            return '+' . $phone;
+        }
+        
+        // Nettoyer le code pays (supprimer +, espaces, etc.)
+        $ccphone = preg_replace('/[^0-9]/', '', $ccphone ?? '221');
+        
+        // Si ccphone est vide après nettoyage, utiliser 221 par défaut (Sénégal)
+        if (empty($ccphone)) {
+            $ccphone = '221';
+        }
+        
+        // Vérifier la longueur du numéro local
+        // Sénégal = 9 chiffres (77XXXXXXX, 78XXXXXXX, 76XXXXXXX, 70XXXXXXX)
+        // Accepter entre 7 et 10 chiffres pour flexibilité internationale
+        if (strlen($phone) < 7 || strlen($phone) > 10) {
+            Log::warning('SMS: Numéro de téléphone invalide (longueur)', [
+                'phone' => $phone,
+                'length' => strlen($phone),
+                'expected' => '7-10 chiffres pour numéro local'
+            ]);
+            return null;
+        }
+        
+        // Si le numéro local commence déjà par le code pays, ne pas doubler
+        if (str_starts_with($phone, $ccphone)) {
+            return '+' . $phone;
+        }
+        
+        // Format final : +221771234567
+        return '+' . $ccphone . $phone;
+    }
+
+    /**
+     * Vérifier si un numéro est valide pour l'envoi SMS Intech
+     * 
+     * @param string|null $phone Numéro formaté (+221XXXXXXXXX)
+     * @return bool
+     */
+    public function isValidPhoneNumber(?string $phone): bool
+    {
+        if (empty($phone)) {
+            return false;
+        }
+        
+        // Doit commencer par +
+        if (!str_starts_with($phone, '+')) {
+            return false;
+        }
+        
+        // Extraire les chiffres
+        $digits = preg_replace('/[^0-9]/', '', $phone);
+        
+        // Numéro valide : entre 10 et 15 chiffres (standard international E.164)
+        return strlen($digits) >= 10 && strlen($digits) <= 15;
+    }
+
+    /**
      * Envoyer un SMS à un ou plusieurs destinataires
      *
      * @param array $recipients Tableau de numéros (format international +221XXXXXXXXX)
@@ -58,14 +148,38 @@ class NotificationsService
     public function sendSms(array $recipients, string $message): array
     {
         try {
+            // Vérifier la configuration
+            if (empty($this->appKey) || empty($this->endpoint)) {
+                Log::error('SMS: Configuration Intech SMS manquante', [
+                    'app_key_set' => !empty($this->appKey),
+                    'sender' => $this->sender,
+                    'endpoint' => $this->endpoint,
+                ]);
+                return [
+                    'success' => false,
+                    'message' => 'Configuration SMS manquante.',
+                ];
+            }
+            
             $normalizedMessage = $this->normalizeSms($message);
             $results = [];
             
             foreach ($recipients as $phone) {
-                // Skip empty phone numbers
-                if (empty($phone) || $phone === '+') {
+                // Valider le numéro avec la méthode dédiée (format Intech: +XXXXXXXXXXXX)
+                if (!$this->isValidPhoneNumber($phone)) {
+                    Log::warning('SMS: Numéro ignoré (format invalide)', [
+                        'phone' => $phone,
+                        'reason' => 'Ne respecte pas le format international +XXXXXXXXXXXX (Intech SMS)'
+                    ]);
                     continue;
                 }
+                
+                Log::info('SMS: Envoi en cours...', [
+                    'phone' => $phone,
+                    'sender' => $this->sender,
+                    'message_length' => strlen($normalizedMessage),
+                    'endpoint' => $this->endpoint,
+                ]);
                 
                 $response = Http::timeout(10)->post($this->endpoint, [
                     'app_key' => $this->appKey,
@@ -76,9 +190,11 @@ class NotificationsService
                 
                 $responseData = $response->json();
                 
-                Log::info('SMS envoyé via Intech', [
+                $isSuccess = !($responseData['error'] ?? true);
+                
+                Log::info('SMS: Réponse Intech', [
                     'phone' => $phone,
-                    'message_length' => strlen($normalizedMessage),
+                    'success' => $isSuccess,
                     'response_code' => $responseData['code'] ?? null,
                     'response_error' => $responseData['error'] ?? null,
                     'response_msg' => $responseData['msg'] ?? null,
@@ -86,19 +202,23 @@ class NotificationsService
                 
                 $results[] = [
                     'phone' => $phone,
-                    'success' => !($responseData['error'] ?? true),
+                    'success' => $isSuccess,
+                    'response' => $responseData,
                 ];
             }
             
+            $hasSuccess = collect($results)->contains('success', true);
+            
             return [
-                'success' => true,
-                'message' => 'Message envoyé.',
+                'success' => $hasSuccess,
+                'message' => $hasSuccess ? 'Message envoyé.' : 'Aucun message envoyé.',
                 'results' => $results,
             ];
         } catch (\Exception $e) {
-            Log::error('Erreur envoi SMS Intech', [
+            Log::error('SMS: Exception lors de l\'envoi', [
                 'error' => $e->getMessage(),
                 'recipients' => $recipients,
+                'trace' => $e->getTraceAsString(),
             ]);
             
             return [
@@ -121,10 +241,19 @@ class NotificationsService
             $appInfo = AppInfo::first();
             
             if ($appInfo && $appInfo->phone2) {
-                $phone = '+' . ($appInfo->ccphone2 ?? '221') . $appInfo->phone2;
-                $this->sendSms([$phone], $message);
+                // Utiliser formatPhoneNumber pour normaliser le numéro admin
+                $phone = $this->formatPhoneNumber($appInfo->ccphone2, $appInfo->phone2);
                 
-                Log::info('SMS admin envoyé', ['phone' => $phone]);
+                if ($phone && $this->isValidPhoneNumber($phone)) {
+                    $this->sendSms([$phone], $message);
+                    Log::info('SMS admin envoyé', ['phone' => $phone]);
+                } else {
+                    Log::warning('SMS admin non envoyé: numéro invalide après formatage', [
+                        'ccphone2' => $appInfo->ccphone2,
+                        'phone2' => $appInfo->phone2,
+                        'formatted' => $phone,
+                    ]);
+                }
             } else {
                 Log::warning('SMS admin non envoyé: pas de numéro phone2 configuré');
             }

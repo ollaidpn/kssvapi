@@ -399,6 +399,7 @@ class AdminController extends Controller
                 'client_email' => $order->user->email ?? '',
                 'items_count' => $order->items_count ?? 0,
                 'discount' => (float) $order->discount,
+                'delivery_fee' => (float) ($order->delivery_fee ?? 0),
                 'total' => (float) $order->total,
                 'status' => $order->status ?? 'pending',
                 'created_at' => $order->created_at->format('Y-m-d H:i'),
@@ -479,6 +480,7 @@ class AdminController extends Controller
                         'address' => $order->address,
                         'city' => $order->city,
                         'discount' => (float) $order->discount,
+                        'delivery_fee' => (float) ($order->delivery_fee ?? 0),
                         'total' => (float) $order->total,
                         'created_at' => $order->created_at->format('Y-m-d H:i'),
                         'updated_at' => $order->updated_at->format('Y-m-d H:i'),
@@ -498,6 +500,7 @@ class AdminController extends Controller
                     'summary' => [
                         'subtotal' => $subtotal,
                         'discount' => (float) $order->discount,
+                        'delivery_fee' => (float) ($order->delivery_fee ?? 0),
                         'total' => (float) $order->total,
                         'total_paid' => $totalPaid,
                         'remaining' => $remaining,
@@ -1476,6 +1479,7 @@ class AdminController extends Controller
                 'name' => 'required|string|max:255',
                 'logo' => 'nullable|string',
                 'parent_id' => 'nullable|integer|exists:categories,id',
+                'local_image' => 'nullable|image|max:5120', // 5MB max
             ]);
 
             // Éviter auto-référence
@@ -1483,7 +1487,22 @@ class AdminController extends Controller
                 return response()->json(['success' => false, 'message' => 'Une catégorie ne peut pas être son propre parent'], 400);
             }
 
-            $category->update($validated);
+            // Handle local_image upload
+            if ($request->hasFile('local_image')) {
+                $file = $request->file('local_image');
+                $filename = 'cat_' . $category->id . '_' . time() . '.' . $file->getClientOriginalExtension();
+                $file->move(public_path('uploads/categories'), $filename);
+                $category->local_image = 'uploads/categories/' . $filename;
+            }
+
+            $category->name = $validated['name'];
+            if (isset($validated['logo'])) {
+                $category->logo = $validated['logo'];
+            }
+            if (array_key_exists('parent_id', $validated)) {
+                $category->parent_id = $validated['parent_id'];
+            }
+            $category->save();
 
             Log::info('API Admin: Catégorie modifiée', ['category_id' => $id]);
 
@@ -1795,6 +1814,60 @@ class AdminController extends Controller
             return response()->json(['success' => true, 'message' => 'Article supprimé']);
         } catch (\Exception $e) {
             Log::error('API Admin: Erreur suppression article', ['error' => $e->getMessage()]);
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * POST /api/admin/items/{id}/image
+     * Upload une nouvelle image pour un article
+     */
+    public function uploadItemImage(Request $request, int $id): JsonResponse
+    {
+        try {
+            $request->validate([
+                'image' => 'required|image|max:5120', // 5MB max
+            ]);
+
+            $item = Item::find($id);
+            if (!$item) {
+                return response()->json(['success' => false, 'message' => 'Article non trouvé'], 404);
+            }
+
+            $file = $request->file('image');
+            $filename = 'item_' . $item->id . '_' . time() . '.' . $file->getClientOriginalExtension();
+            
+            // Ensure directory exists
+            $uploadPath = public_path('uploads/items');
+            if (!file_exists($uploadPath)) {
+                mkdir($uploadPath, 0755, true);
+            }
+            
+            $file->move($uploadPath, $filename);
+            $imageUrl = 'uploads/items/' . $filename;
+
+            // Add to gallery
+            $images = $item->images ?? [];
+            $images[] = $imageUrl;
+            $item->images = $images;
+
+            // If main image is no-image or empty, use this new image
+            if (empty($item->image) || str_contains($item->image, 'no-image') || str_contains($item->image, 'aucune')) {
+                $item->image = $imageUrl;
+            }
+
+            $item->save();
+
+            Log::info('API Admin: Image uploadée pour article', ['item_id' => $id, 'image' => $imageUrl]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Image uploadée avec succès',
+                'image_url' => Shortcut::fileExistsOnServer($imageUrl),
+                'item' => $item->fresh()
+            ]);
+        } catch (\Exception $e) {
+            Log::error('API Admin: Erreur upload image article', ['error' => $e->getMessage()]);
             return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
         }
     }
@@ -2603,6 +2676,151 @@ class AdminController extends Controller
             ]);
         } catch (\Exception $e) {
             Log::error('API Admin: Erreur activation admin', ['error' => $e->getMessage()]);
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
+        }
+    }
+
+    // ============================================
+    // DELIVERY ZONES MANAGEMENT
+    // ============================================
+
+    /**
+     * GET /api/admin/delivery-zones
+     * Récupérer toutes les zones de livraison avec leurs sous-zones
+     */
+    public function getDeliveryZones(Request $request): JsonResponse
+    {
+        try {
+            Log::info('API Admin: Récupération zones de livraison');
+            
+            $zones = \App\Models\DeliveryZone::whereNull('parent_id')
+                ->with(['children' => function($q) {
+                    $q->orderBy('name');
+                }])
+                ->orderBy('name')
+                ->get();
+            
+            return response()->json([
+                'success' => true,
+                'data' => $zones
+            ]);
+        } catch (\Exception $e) {
+            Log::error('API Admin: Erreur récupération zones', ['error' => $e->getMessage()]);
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * GET /api/delivery-zones (PUBLIC)
+     * Récupérer les zones actives pour le checkout
+     */
+    public function getDeliveryZonesPublic(): JsonResponse
+    {
+        try {
+            $zones = \App\Models\DeliveryZone::whereNull('parent_id')
+                ->where('is_active', true)
+                ->with(['children' => function($q) {
+                    $q->where('is_active', true)->orderBy('name');
+                }])
+                ->orderBy('name')
+                ->get();
+            
+            return response()->json([
+                'success' => true,
+                'data' => $zones
+            ]);
+        } catch (\Exception $e) {
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * POST /api/admin/delivery-zones
+     * Créer une nouvelle zone de livraison
+     */
+    public function createDeliveryZone(Request $request): JsonResponse
+    {
+        try {
+            $validated = $request->validate([
+                'name' => 'required|string|max:100',
+                'parent_id' => 'nullable|exists:delivery_zones,id',
+                'price' => 'nullable|integer|min:0',
+            ]);
+            
+            $zone = \App\Models\DeliveryZone::create($validated);
+            
+            // Recharger avec les relations
+            $zone->load('children');
+            
+            Log::info('API Admin: Zone créée', ['zone_id' => $zone->id, 'name' => $zone->name]);
+            
+            return response()->json([
+                'success' => true,
+                'message' => 'Zone créée avec succès',
+                'data' => $zone
+            ]);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return response()->json(['success' => false, 'message' => 'Données invalides', 'errors' => $e->errors()], 422);
+        } catch (\Exception $e) {
+            Log::error('API Admin: Erreur création zone', ['error' => $e->getMessage()]);
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * PUT /api/admin/delivery-zones/{id}
+     * Mettre à jour une zone de livraison
+     */
+    public function updateDeliveryZone(Request $request, int $id): JsonResponse
+    {
+        try {
+            $zone = \App\Models\DeliveryZone::findOrFail($id);
+            
+            $validated = $request->validate([
+                'name' => 'sometimes|string|max:100',
+                'price' => 'nullable|integer|min:0',
+                'is_active' => 'sometimes|boolean',
+            ]);
+            
+            $zone->update($validated);
+            $zone->load('children');
+            
+            Log::info('API Admin: Zone mise à jour', ['zone_id' => $zone->id]);
+            
+            return response()->json([
+                'success' => true,
+                'message' => 'Zone mise à jour avec succès',
+                'data' => $zone
+            ]);
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            return response()->json(['success' => false, 'message' => 'Zone non trouvée'], 404);
+        } catch (\Exception $e) {
+            Log::error('API Admin: Erreur mise à jour zone', ['error' => $e->getMessage()]);
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * DELETE /api/admin/delivery-zones/{id}
+     * Supprimer une zone de livraison
+     */
+    public function deleteDeliveryZone(int $id): JsonResponse
+    {
+        try {
+            $zone = \App\Models\DeliveryZone::findOrFail($id);
+            $zoneName = $zone->name;
+            $zone->delete();
+            
+            Log::info('API Admin: Zone supprimée', ['zone_id' => $id, 'name' => $zoneName]);
+            
+            return response()->json([
+                'success' => true,
+                'message' => 'Zone supprimée avec succès'
+            ]);
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            return response()->json(['success' => false, 'message' => 'Zone non trouvée'], 404);
+        } catch (\Exception $e) {
+            Log::error('API Admin: Erreur suppression zone', ['error' => $e->getMessage()]);
             return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
         }
     }

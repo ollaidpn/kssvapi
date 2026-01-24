@@ -22,17 +22,19 @@ class OrderConfirmationMail extends Mailable
     public Collection $items;
     public bool $isPaid;
     public ?AppInfo $appInfo;
+    public string $frontendUrl;
 
     /**
      * Create a new message instance.
      */
-    public function __construct(User $user, Order $order, Collection $items, bool $isPaid = false)
+    public function __construct(User $user, Order $order, Collection $items, bool $isPaid = false, ?string $frontendUrl = null)
     {
         $this->user = $user;
         $this->order = $order;
         $this->items = $items;
         $this->isPaid = $isPaid;
         $this->appInfo = AppInfo::first();
+        $this->frontendUrl = $frontendUrl ?? $order->frontend_url ?? config('app.frontend_url', config('app.url'));
     }
 
     /**

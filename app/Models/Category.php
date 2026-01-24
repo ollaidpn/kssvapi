@@ -19,6 +19,7 @@ class Category extends Model
         'og_id',
         'name',
         'logo',
+        'local_image',
         'original_logo',
         'parent_id',
     ];

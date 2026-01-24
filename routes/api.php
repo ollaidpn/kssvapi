@@ -68,6 +68,12 @@ Route::prefix('local')->group(function () {
 });
 
 // ============================================
+// Public Delivery Zones (For Checkout)
+// ============================================
+
+Route::get('/delivery-zones', [AdminController::class, 'getDeliveryZonesPublic']);
+
+// ============================================
 // Authentication Routes (Public)
 // ============================================
 
@@ -181,6 +187,7 @@ Route::middleware('auth:sanctum')->prefix('admin')->group(function () {
     Route::post('/items', [AdminController::class, 'createItem']);
     Route::put('/items/{id}', [AdminController::class, 'updateItem']);
     Route::delete('/items/{id}', [AdminController::class, 'deleteItem']);
+    Route::post('/items/{id}/image', [AdminController::class, 'uploadItemImage']);
     
     // Sections Management
     Route::get('/sections', [AdminController::class, 'getSections']);
@@ -215,6 +222,12 @@ Route::middleware('auth:sanctum')->prefix('admin')->group(function () {
     Route::delete('/users/{id}', [AdminController::class, 'deleteAdmin']);
     Route::post('/users/{id}/resend-invitation', [AdminController::class, 'resendAdminInvitation']);
     Route::put('/users/{id}/toggle-status', [AdminController::class, 'toggleAdminStatus']);
+    
+    // Delivery Zones Management
+    Route::get('/delivery-zones', [AdminController::class, 'getDeliveryZones']);
+    Route::post('/delivery-zones', [AdminController::class, 'createDeliveryZone']);
+    Route::put('/delivery-zones/{id}', [AdminController::class, 'updateDeliveryZone']);
+    Route::delete('/delivery-zones/{id}', [AdminController::class, 'deleteDeliveryZone']);
 });
 
 // ============================================

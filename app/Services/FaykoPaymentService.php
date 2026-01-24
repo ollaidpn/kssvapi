@@ -53,8 +53,8 @@ class FaykoPaymentService
                 'paid_by'     => $paidBy,
                 'ccphone'     => $payload['ccphone'] ?? '+221',
                 'phone'       => $payload['phone'] ?? '',
-                'error_url'   => $payload['error_url'] ?? config('app.url'),
-                'success_url' => $payload['success_url'] ?? config('app.url'),
+                'error_url'   => $payload['error_url'] ?? config('app.frontend_url', config('app.url')),
+                'success_url' => $payload['success_url'] ?? config('app.frontend_url', config('app.url')),
                 'extra_data'  => json_encode($payload['extra_data'] ?? []),
             ];
 

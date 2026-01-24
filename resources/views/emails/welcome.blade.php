@@ -74,7 +74,7 @@
                                         <table role="presentation" style="border-collapse: collapse;">
                                             <tr>
                                                 <td style="border-radius: 8px; background: linear-gradient(135deg, #fd7f07 0%, #e56b00 100%);">
-                                                    <a href="{{ config('app.frontend_url') }}"
+                                                    <a href="{{ $frontendUrl }}"
                                                        target="_blank"
                                                        style="display: inline-block; padding: 16px 40px; font-size: 16px; font-weight: 600; color: #ffffff; text-decoration: none;">
                                                         Découvrir nos produits

@@ -13,10 +13,12 @@ class Order extends Model
 
     protected $fillable = [
         'discount',
+        'delivery_fee',
         'total',
         'status',
         'delivery_status',
         'payment_status',
+        'frontend_url',
         'user_id',
         'reference',
         'promo_code_id',

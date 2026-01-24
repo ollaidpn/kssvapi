@@ -209,6 +209,7 @@ class AccountController extends Controller
                         'reference' => $order->reference,
                         'status' => $order->status,
                         'discount' => (float) $order->discount,
+                        'delivery_fee' => (float) ($order->delivery_fee ?? 0),
                         'total' => (float) $order->total,
                         'created_at' => $order->created_at->format('d M Y H:i'),
                     ],
@@ -218,6 +219,7 @@ class AccountController extends Controller
                     'summary' => [
                         'subtotal' => $subtotal,
                         'discount' => (float) $order->discount,
+                        'delivery_fee' => (float) ($order->delivery_fee ?? 0),
                         'total' => (float) $order->total,
                         'total_paid' => $totalPaid,
                         'remaining' => (float) $order->total - $totalPaid,
@@ -297,16 +299,19 @@ class AccountController extends Controller
                 'city' => 'required|string|max:100',
                 'payment_method' => 'required|string|in:cash_on_delivery,wave_senegal,orange_money_senegal',
                 'promo_code_id' => 'nullable|integer|exists:promo_codes,id',
+                'delivery_fee' => 'nullable|integer|min:0',
             ]);
             
             $user = $request->user();
             $paymentMethod = $validated['payment_method'];
             $promoCodeId = $validated['promo_code_id'] ?? null;
+            $deliveryFee = $validated['delivery_fee'] ?? 0;
             
             Log::info('API Account: Création commande', [
                 'user_id' => $user->id,
                 'payment_method' => $paymentMethod,
-                'promo_code_id' => $promoCodeId
+                'promo_code_id' => $promoCodeId,
+                'delivery_fee' => $deliveryFee
             ]);
             
             // Récupérer les articles du panier
@@ -338,8 +343,8 @@ class AccountController extends Controller
                 }
             }
             
-            // Total final
-            $total = max(0, $subtotal - $discount);
+            // Total final = sous-total - réduction + frais de livraison
+            $total = max(0, $subtotal - $discount) + $deliveryFee;
             
             // Générer référence unique
             $reference = 'CMD-' . date('Ymd') . '-' . strtoupper(substr(uniqid(), -6));
@@ -347,17 +352,22 @@ class AccountController extends Controller
             // Déterminer le statut initial selon le mode de paiement
             $initialStatus = $paymentMethod === 'cash_on_delivery' ? 'pending' : 'processing';
             
+            // Récupérer l'URL frontend dynamiquement pour la stocker avec la commande
+            $frontendUrl = Shortcut::getFrontendUrl($request);
+            
             // Créer la commande
             $order = Order::create([
                 'user_id' => $user->id,
                 'reference' => $reference,
                 'total' => $total,
                 'discount' => $discount,
+                'delivery_fee' => $deliveryFee,
                 'status' => $initialStatus,
                 'address' => $validated['address'],
                 'city' => $validated['city'],
                 'payment_method' => $paymentMethod,
                 'promo_code_id' => $promoCodeId,
+                'frontend_url' => $frontendUrl,
             ]);
             
             // Lier les articles du panier à la commande et changer le type
@@ -404,19 +414,34 @@ class AccountController extends Controller
                 // Construire la description avec la liste des articles
                 $description = $this->buildOrderDescription($cartItems);
                 
-                // Construire le success_url avec le payment_id
-                $frontendUrl = Shortcut::getFrontendUrl($request);
-                $successUrl = $frontendUrl . '/paiement-reussi?payment_id=' . $payment->id;
-                $errorUrl = $frontendUrl . '/checkout';
+                // Construire la désignation enrichie: "Commande KSSV - Nom - Téléphone - Email"
+                $clientPhone = ($user->ccphone ?? '+221') . ($user->phone ?? '');
+                $designation = 'Commande KSSV - ' . ($user->name ?? 'Client') . ' - ' . $clientPhone;
+                if ($user->email) {
+                    $designation .= ' - ' . $user->email;
+                }
+                
+                // Construire le success_url avec le payment_id (utiliser l'URL stockée dans la commande)
+                $successUrl = $order->frontend_url . '/paiement-reussi?payment_id=' . $payment->id;
+                $errorUrl = $order->frontend_url . '/checkout';
+                
+                Log::info('API Account: Montant envoyé à Fayko', [
+                    'subtotal' => $subtotal,
+                    'discount' => $discount,
+                    'total_after_discount' => $total,
+                    'promo_code_id' => $promoCodeId,
+                    'designation' => $designation,
+                    'description' => $description
+                ]);
                 
                 $paymentResult = $faykoService->makePayment([
                     'payment_method' => $paymentMethod,
-                    'amount' => (int) $total,  // Entier, pas de décimales
+                    'amount' => (int) $total,  // Entier, pas de décimales - AVEC réduction appliquée
                     'qty' => 1,  // Toujours 1 pour une commande globale
                     'client_name' => $user->name ?? 'Client',
-                    'name' => 'Commande KSSV',
-                    'description' => $description,
-                    'ccphone' => '+221',
+                    'name' => $designation,  // Désignation enrichie
+                    'description' => $description,  // Liste des articles
+                    'ccphone' => $user->ccphone ?? '+221',
                     'phone' => $user->phone ?? '',
                     'extra_data' => [
                         'origin' => 'kssv',
@@ -495,11 +520,27 @@ class AccountController extends Controller
                 // SMS confirmation au client (commande payée)
                 try {
                     $smsService = new \App\Services\NotificationsService();
-                    $clientPhone = '+' . ($user->ccphone ?? '221') . $user->phone;
-                    $smsService->sendOrderConfirmationSms($clientPhone, $order->reference, $order->total, true);
-                    Log::info('API Account: SMS confirmation (payé) envoyé au client', ['phone' => $clientPhone]);
+                    $clientPhone = $smsService->formatPhoneNumber($user->ccphone, $user->phone);
+                    
+                    if ($clientPhone) {
+                        $result = $smsService->sendOrderConfirmationSms($clientPhone, $order->reference, $order->total, true);
+                        Log::info('API Account: SMS confirmation (payé) envoyé au client', [
+                            'phone' => $clientPhone,
+                            'success' => $result['success'] ?? false,
+                            'order_ref' => $order->reference,
+                        ]);
+                    } else {
+                        Log::warning('API Account: SMS non envoyé - numéro client invalide', [
+                            'user_ccphone' => $user->ccphone,
+                            'user_phone' => $user->phone,
+                            'order_ref' => $order->reference,
+                        ]);
+                    }
                 } catch (\Exception $smsError) {
-                    Log::error('API Account: Erreur envoi SMS confirmation client', ['error' => $smsError->getMessage()]);
+                    Log::error('API Account: Erreur envoi SMS confirmation client', [
+                        'error' => $smsError->getMessage(),
+                        'order_id' => $order->id,
+                    ]);
                 }
                 
                 // SMS alerte à l'admin
@@ -553,11 +594,27 @@ class AccountController extends Controller
             // SMS confirmation au client (commande COD = non payée)
             try {
                 $smsService = new \App\Services\NotificationsService();
-                $clientPhone = '+' . ($user->ccphone ?? '221') . $user->phone;
-                $smsService->sendOrderConfirmationSms($clientPhone, $order->reference, $order->total, false);
-                Log::info('API Account: SMS confirmation envoyé au client', ['phone' => $clientPhone]);
+                $clientPhone = $smsService->formatPhoneNumber($user->ccphone, $user->phone);
+                
+                if ($clientPhone) {
+                    $result = $smsService->sendOrderConfirmationSms($clientPhone, $order->reference, $order->total, false);
+                    Log::info('API Account: SMS confirmation envoyé au client', [
+                        'phone' => $clientPhone,
+                        'success' => $result['success'] ?? false,
+                        'order_ref' => $order->reference,
+                    ]);
+                } else {
+                    Log::warning('API Account: SMS non envoyé - numéro client invalide', [
+                        'user_ccphone' => $user->ccphone,
+                        'user_phone' => $user->phone,
+                        'order_ref' => $order->reference,
+                    ]);
+                }
             } catch (\Exception $smsError) {
-                Log::error('API Account: Erreur envoi SMS confirmation client', ['error' => $smsError->getMessage()]);
+                Log::error('API Account: Erreur envoi SMS confirmation client', [
+                    'error' => $smsError->getMessage(),
+                    'order_id' => $order->id,
+                ]);
             }
             
             // SMS alerte à l'admin
@@ -775,16 +832,24 @@ class AccountController extends Controller
     
     /**
      * Construire la description de la commande pour Fayko
+     * Liste tous les articles avec leur quantité
      */
     private function buildOrderDescription($cartItems): string
     {
         $lines = [];
         foreach ($cartItems as $item) {
-            $infos = $item->item_infos ?? [];
+            $infos = is_string($item->item_infos) 
+                ? json_decode($item->item_infos, true) 
+                : ($item->item_infos ?? []);
             $name = $infos['name'] ?? 'Article';
             $lines[] = "{$item->qty}x {$name}";
         }
-        return implode(', ', $lines);
+        
+        if (empty($lines)) {
+            return 'Articles commandés';
+        }
+        
+        return 'Articles: ' . implode(', ', $lines);
     }
 
     /**
@@ -929,6 +994,7 @@ class AccountController extends Controller
                         'reference' => $order->reference,
                         'total' => (float) $order->total,
                         'discount' => (float) ($order->discount ?? 0),
+                        'delivery_fee' => (float) ($order->delivery_fee ?? 0),
                         'status' => $order->status,
                         'payment_status' => $order->payment_status ?? 'pending',
                         'delivery_status' => $order->delivery_status ?? 'pending',
@@ -961,6 +1027,7 @@ class AccountController extends Controller
                     'summary' => [
                         'subtotal' => $subtotal,
                         'discount' => (float) ($order->discount ?? 0),
+                        'delivery_fee' => (float) ($order->delivery_fee ?? 0),
                         'total' => (float) $order->total,
                         'total_paid' => $totalPaid,
                         'remaining' => (float) $order->total - $totalPaid,

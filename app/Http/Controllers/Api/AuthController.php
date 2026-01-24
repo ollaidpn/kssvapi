@@ -258,16 +258,33 @@ class AuthController extends Controller
             $otp->markAsUsed();
 
             // Send welcome email
-            Mail::to($user->email)->send(new WelcomeMail($user));
+            $frontendUrl = Shortcut::getFrontendUrl($request);
+            Mail::to($user->email)->send(new WelcomeMail($user, $frontendUrl));
 
             // Envoyer SMS de bienvenue au client
             try {
                 $smsService = new \App\Services\NotificationsService();
-                $phoneNumber = '+' . ($user->ccphone ?? '221') . $user->phone;
-                $smsService->sendWelcomeSms($phoneNumber, $user->name, $user->reference);
-                Log::info('API Auth: SMS bienvenue envoyé', ['phone' => $phoneNumber]);
+                $phoneNumber = $smsService->formatPhoneNumber($user->ccphone, $user->phone);
+                
+                if ($phoneNumber) {
+                    $result = $smsService->sendWelcomeSms($phoneNumber, $user->name, $user->reference);
+                    Log::info('API Auth: SMS bienvenue envoyé', [
+                        'phone' => $phoneNumber,
+                        'success' => $result['success'] ?? false,
+                        'user_ccphone' => $user->ccphone,
+                        'user_phone' => $user->phone,
+                    ]);
+                } else {
+                    Log::warning('API Auth: SMS bienvenue non envoyé - numéro invalide', [
+                        'user_ccphone' => $user->ccphone,
+                        'user_phone' => $user->phone,
+                    ]);
+                }
             } catch (\Exception $smsError) {
-                Log::error('API Auth: Erreur envoi SMS bienvenue', ['error' => $smsError->getMessage()]);
+                Log::error('API Auth: Erreur envoi SMS bienvenue', [
+                    'error' => $smsError->getMessage(),
+                    'user_id' => $user->id,
+                ]);
             }
 
             // Create token with 30 days expiration for clients

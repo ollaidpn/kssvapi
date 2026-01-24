@@ -442,16 +442,33 @@ class LocalController extends Controller
         // Shortcut::fileExistsOnServer retourne directement l'URL complète
         $image = Shortcut::fileExistsOnServer($item->image);
         
-        // Si le fichier n'existe pas localement mais qu'on a l'original
-        if (str_contains($image, 'no-image.png') && !empty($item->original_image)) {
-            $image = $item->original_image;
-        }
-        
-        // Build gallery URLs
+        // Build gallery URLs first
         $images = [];
         if (!empty($item->images) && is_array($item->images)) {
             foreach ($item->images as $img) {
-                $images[] = Shortcut::fileExistsOnServer($img);
+                $resolved = Shortcut::fileExistsOnServer($img);
+                $images[] = $resolved;
+            }
+        }
+        
+        // Si l'image principale est no-image, chercher dans la galerie
+        if (str_contains($image, 'no-image.png') || str_contains($image, 'aucune')) {
+            // Chercher une image valide dans la galerie
+            $foundValid = false;
+            if (!empty($item->images) && is_array($item->images)) {
+                foreach ($item->images as $img) {
+                    $resolved = Shortcut::fileExistsOnServer($img);
+                    if (!str_contains($resolved, 'no-image') && !str_contains($resolved, 'aucune')) {
+                        $image = $resolved;
+                        $foundValid = true;
+                        break;
+                    }
+                }
+            }
+            
+            // Sinon fallback sur original_image
+            if (!$foundValid && !empty($item->original_image)) {
+                $image = $item->original_image;
             }
         }
         
@@ -482,9 +499,19 @@ class LocalController extends Controller
         // Shortcut::fileExistsOnServer retourne directement l'URL complète
         $logo = Shortcut::fileExistsOnServer($category->logo);
         
-        // Si pas de logo local mais original disponible
-        if (str_contains($logo, 'no-image.png') && !empty($category->original_logo)) {
-            $logo = $category->original_logo;
+        // Si logo par défaut est no-image, chercher dans local_image d'abord
+        if (str_contains($logo, 'no-image.png') || str_contains($logo, 'aucune')) {
+            // Priority 1: local_image uploaded by admin
+            if (!empty($category->local_image)) {
+                $localLogo = Shortcut::fileExistsOnServer($category->local_image);
+                if (!str_contains($localLogo, 'no-image')) {
+                    $logo = $localLogo;
+                }
+            }
+            // Priority 2: original_logo from HomeIP
+            elseif (!empty($category->original_logo)) {
+                $logo = $category->original_logo;
+            }
         }
         
         return [

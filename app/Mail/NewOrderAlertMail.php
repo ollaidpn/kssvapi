@@ -18,16 +18,18 @@ class NewOrderAlertMail extends Mailable
     public Order $order;
     public int $itemsCount;
     public string $paymentMethod;
+    public string $frontendUrl;
 
     /**
      * Create a new message instance.
      */
-    public function __construct(User $client, Order $order, int $itemsCount, string $paymentMethod)
+    public function __construct(User $client, Order $order, int $itemsCount, string $paymentMethod, ?string $frontendUrl = null)
     {
         $this->client = $client;
         $this->order = $order;
         $this->itemsCount = $itemsCount;
         $this->paymentMethod = $paymentMethod;
+        $this->frontendUrl = $frontendUrl ?? $order->frontend_url ?? config('app.frontend_url', config('app.url'));
     }
 
     /**

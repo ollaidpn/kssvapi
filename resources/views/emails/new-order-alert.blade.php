@@ -73,6 +73,12 @@
                                         <td style="padding: 12px 20px; color: #666666; font-size: 14px;">Livraison</td>
                                         <td style="padding: 12px 20px; color: #333333; font-size: 14px;">{{ $order->address }}, {{ $order->city }}</td>
                                     </tr>
+                                    @if(($order->delivery_fee ?? 0) > 0)
+                                    <tr>
+                                        <td style="padding: 12px 20px; color: #666666; font-size: 14px;">Frais livraison</td>
+                                        <td style="padding: 12px 20px; color: #fd7f07; font-size: 14px; font-weight: 600;">+{{ number_format($order->delivery_fee, 0, '', ' ') }} FCFA</td>
+                                    </tr>
+                                    @endif
                                 </table>
                             </div>
 
@@ -89,7 +95,7 @@
                                         <table role="presentation" style="border-collapse: collapse;">
                                             <tr>
                                                 <td style="border-radius: 8px; background: linear-gradient(135deg, #fd7f07 0%, #e56b00 100%);">
-                                                    <a href="{{ config('app.frontend_url') }}/admin"
+                                                    <a href="{{ $frontendUrl }}/admin"
                                                        target="_blank"
                                                        style="display: inline-block; padding: 16px 40px; font-size: 16px; font-weight: 600; color: #ffffff; text-decoration: none;">
                                                         Voir dans l'admin
