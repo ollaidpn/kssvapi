@@ -3,97 +3,87 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Invitation Admin - KSSV</title>
+    <title>Invitation Administrateur KSSV</title>
 </head>
-<body style="margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f5f5f5;">
-    <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="background-color: #f5f5f5;">
+<body style="margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f8f9fa;">
+    <table role="presentation" style="width: 100%; border-collapse: collapse;">
         <tr>
-            <td style="padding: 40px 20px;">
-                <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);">
+            <td align="center" style="padding: 40px 20px;">
+                <table role="presentation" style="width: 100%; max-width: 600px; border-collapse: collapse; background-color: #ffffff; border-radius: 16px; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);">
                     <!-- Header -->
                     <tr>
-                        <td style="background: linear-gradient(135deg, #D4AF37 0%, #C49B2B 100%); padding: 30px; text-align: center;">
-                            <h1 style="margin: 0; color: #ffffff; font-size: 28px; font-weight: bold;">
-                                🎉 Bienvenue chez KSSV
+                        <td style="padding: 40px 40px 20px; text-align: center; background: linear-gradient(135deg, #000080 0%, #0000a0 100%); border-radius: 16px 16px 0 0;">
+                            <h1 style="margin: 0; color: #ffffff; font-size: 28px; font-weight: 700;">
+                                🎉 Bienvenue dans l'équipe KSSV
                             </h1>
                             <p style="margin: 10px 0 0; color: rgba(255,255,255,0.9); font-size: 14px;">
-                                Keur Serigne Saliou Vaisselle
+                                Invitation Administrateur
                             </p>
                         </td>
                     </tr>
-                    
+
                     <!-- Content -->
                     <tr>
-                        <td style="padding: 40px 30px;">
-                            <h2 style="margin: 0 0 20px; color: #333333; font-size: 22px;">
-                                Bonjour {{ $admin->name }} !
-                            </h2>
-                            
-                            <p style="margin: 0 0 20px; color: #555555; font-size: 16px; line-height: 1.6;">
-                                Vous avez été invité à rejoindre l'équipe d'administration de <strong>KSSV - Keur Serigne Saliou Vaisselle</strong>.
+                        <td style="padding: 40px;">
+                            <p style="margin: 0 0 20px; color: #333333; font-size: 16px; line-height: 1.6;">
+                                Bonjour <strong>{{ $admin->name }}</strong>,
                             </p>
                             
                             <p style="margin: 0 0 30px; color: #555555; font-size: 16px; line-height: 1.6;">
-                                Cliquez sur le bouton ci-dessous pour activer votre compte et définir votre mot de passe :
+                                Vous avez été invité(e) à rejoindre l'équipe d'administration de <strong>Keur Serigne Saliou Vaisselle</strong>.
+                                Cliquez sur le bouton ci-dessous pour activer votre compte et définir votre mot de passe.
                             </p>
-                            
+
                             <!-- CTA Button -->
-                            <table role="presentation" cellspacing="0" cellpadding="0" border="0" style="margin: 0 auto;">
+                            <table role="presentation" style="width: 100%; border-collapse: collapse;">
                                 <tr>
-                                    <td style="border-radius: 8px; background: linear-gradient(135deg, #D4AF37 0%, #C49B2B 100%);">
-                                        <a href="{{ config('app.frontend_url') }}/admin/activate?token={{ $activationToken }}&email={{ urlencode($admin->email) }}" 
-                                           target="_blank"
-                                           style="display: inline-block; padding: 16px 40px; color: #ffffff; text-decoration: none; font-size: 16px; font-weight: bold; border-radius: 8px;">
-                                            ✨ Activer mon compte
-                                        </a>
+                                    <td align="center" style="padding: 20px 0;">
+                                        <table role="presentation" style="border-collapse: collapse;">
+                                            <tr>
+                                                <td style="border-radius: 8px; background: linear-gradient(135deg, #fd7f07 0%, #e56b00 100%);">
+                                                    <a href="{{ $frontendUrl }}/admin/activate?token={{ $activationToken }}&email={{ urlencode($admin->email) }}"
+                                                       target="_blank"
+                                                       style="display: inline-block; padding: 16px 40px; font-size: 16px; font-weight: 600; color: #ffffff; text-decoration: none;">
+                                                        Activer mon compte
+                                                    </a>
+                                                </td>
+                                            </tr>
+                                        </table>
                                     </td>
                                 </tr>
                             </table>
-                            
-                            <p style="margin: 30px 0 0; color: #888888; font-size: 14px; text-align: center;">
-                                ⏰ Ce lien expire dans <strong>72 heures</strong>.
+
+                            <!-- Info Box -->
+                            <div style="margin-top: 30px; padding: 20px; background-color: #f0f4ff; border-left: 4px solid #000080; border-radius: 4px;">
+                                <p style="margin: 0 0 10px; color: #333333; font-size: 14px; font-weight: 600;">
+                                    En tant qu'administrateur, vous pourrez :
+                                </p>
+                                <ul style="margin: 0; padding-left: 20px; color: #555555; font-size: 14px; line-height: 1.8;">
+                                    <li>Gérer les commandes et les paiements</li>
+                                    <li>Administrer le catalogue de produits</li>
+                                    <li>Consulter les statistiques de vente</li>
+                                    <li>Gérer les clients et les promotions</li>
+                                </ul>
+                            </div>
+
+                            <p style="margin: 30px 0 0; color: #999999; font-size: 13px; text-align: center;">
+                                Ce lien expire dans 48 heures. Si vous n'avez pas demandé cette invitation, veuillez ignorer cet email.
                             </p>
                         </td>
                     </tr>
-                    
-                    <!-- Info Box -->
-                    <tr>
-                        <td style="padding: 0 30px 30px;">
-                            <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="background-color: #f8f9fa; border-radius: 8px;">
-                                <tr>
-                                    <td style="padding: 20px;">
-                                        <p style="margin: 0 0 10px; color: #555555; font-size: 14px; font-weight: bold;">
-                                            📋 En tant qu'administrateur, vous pourrez :
-                                        </p>
-                                        <ul style="margin: 0; padding-left: 20px; color: #666666; font-size: 14px; line-height: 1.8;">
-                                            <li>Gérer les commandes et les clients</li>
-                                            <li>Modifier l'inventaire et les prix</li>
-                                            <li>Configurer les codes promo</li>
-                                            <li>Accéder aux statistiques</li>
-                                        </ul>
-                                    </td>
-                                </tr>
-                            </table>
-                        </td>
-                    </tr>
-                    
+
                     <!-- Footer -->
                     <tr>
-                        <td style="background-color: #f8f9fa; padding: 20px 30px; text-align: center; border-top: 1px solid #eeeeee;">
-                            <p style="margin: 0 0 5px; color: #888888; font-size: 12px;">
-                                KSSV - Keur Serigne Saliou Vaisselle
+                        <td style="padding: 30px 40px; background-color: #f8f9fa; border-radius: 0 0 16px 16px; text-align: center;">
+                            <p style="margin: 0; color: #000080; font-size: 14px; font-weight: 600;">
+                                © {{ date('Y') }} KSSV - Keur Serigne Saliou Vaisselle
                             </p>
-                            <p style="margin: 0; color: #888888; font-size: 12px;">
-                                📞 +221 76 644 16 71 | 📍 Dakar, Sénégal
+                            <p style="margin: 10px 0 0; color: #999999; font-size: 12px;">
+                                Dakar, Sénégal | Cet email a été envoyé automatiquement
                             </p>
                         </td>
                     </tr>
                 </table>
-                
-                <!-- Disclaimer -->
-                <p style="max-width: 600px; margin: 20px auto 0; color: #999999; font-size: 11px; text-align: center;">
-                    Si vous n'avez pas demandé cette invitation, veuillez ignorer cet email.
-                </p>
             </td>
         </tr>
     </table>

@@ -59,6 +59,8 @@ return [
 
     'asset_url' => env('ASSET_URL'),
 
+    'frontend_url' => env('FRONTEND_URL', 'https://id-preview--530ec94f-163a-42dd-8628-1ce9b9206e7c.lovable.app'),
+
     /*
     |--------------------------------------------------------------------------
     | Application Timezone

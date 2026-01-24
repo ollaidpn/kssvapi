@@ -14,6 +14,7 @@ class PaymentLog extends Model
     protected $fillable = [
         'reference',
         'user_id',
+        'order_id',
         'user_info',
         'items',
         'promo_code_id',
@@ -43,6 +44,14 @@ class PaymentLog extends Model
     public function user()
     {
         return $this->belongsTo(User::class);
+    }
+
+    /**
+     * Get the order associated with this payment log.
+     */
+    public function order()
+    {
+        return $this->belongsTo(Order::class);
     }
 
     /**

@@ -5,19 +5,25 @@ namespace App\Http\Controllers\Api;
 use App\Models\Cart;
 use App\Models\Order;
 use App\Models\Payment;
+use App\Models\AppInfo;
+use App\Models\User;
 use App\Helpers\Shortcut;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use App\Http\Controllers\Controller;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Mail;
 use App\Services\FaykoPaymentService;
+use App\Mail\OrderConfirmationMail;
+use App\Mail\NewOrderAlertMail;
 
 class AccountController extends Controller
 {
     /**
      * GET /api/account/dashboard
      * Retourne les statistiques du client connecté
+     * Ne compte que les commandes COD ou totalement payées
      */
     public function dashboard(Request $request): JsonResponse
     {
@@ -25,8 +31,13 @@ class AccountController extends Controller
             $user = $request->user();
             Log::info('API Account: Acces dashboard client', ['user_id' => $user->id]);
             
-            // Nombre de commandes
-            $ordersCount = $user->orders()->count();
+            // Nombre de commandes valides (COD ou payées)
+            $ordersCount = $user->orders()
+                ->where(function($query) {
+                    $query->where('payment_method', 'cash_on_delivery')
+                          ->orWhere('payment_status', 'paid');
+                })
+                ->count();
             
             // Nombre d'articles dans le panier (status = pending, type = cart)
             $cartCount = $user->carts()
@@ -34,12 +45,15 @@ class AccountController extends Controller
                 ->where('type', 'cart')
                 ->sum('qty');
             
-            // Total dépensé (somme des paiements des commandes du user)
-            $totalSpent = Payment::whereHas('order', function($q) use ($user) {
-                $q->where('user_id', $user->id);
-            })->sum('amount');
+            // Total dépensé = somme des commandes confirmées (COD ou payées)
+            $totalSpent = $user->orders()
+                ->where(function($query) {
+                    $query->where('payment_method', 'cash_on_delivery')
+                          ->orWhere('payment_status', 'paid');
+                })
+                ->sum('total');
             
-            // Commandes récentes (5 dernières)
+            // Commandes récentes (5 dernières, toutes confondues pour l'affichage)
             $recentOrders = $user->orders()
                 ->with('carts')
                 ->latest()
@@ -368,10 +382,32 @@ class AccountController extends Controller
 
             // Si paiement mobile (Wave ou Orange Money), appeler Fayko
             if (in_array($paymentMethod, ['wave_senegal', 'orange_money_senegal'])) {
+                // Créer le paiement AVANT d'appeler Fayko (pour avoir le payment_id dans success_url)
+                $payment = Payment::create([
+                    'order_id' => $order->id,
+                    'amount' => $order->total,
+                    'paid_by' => $paymentMethod,
+                    'date' => now(),
+                    'reference' => $order->reference,
+                    'status' => 'pending',
+                    'payment_link' => null,
+                    'expires_at' => null,
+                ]);
+                
+                Log::info('API Account: Paiement pending créé AVANT Fayko', [
+                    'payment_id' => $payment->id,
+                    'order_id' => $order->id,
+                ]);
+                
                 $faykoService = new FaykoPaymentService();
                 
                 // Construire la description avec la liste des articles
                 $description = $this->buildOrderDescription($cartItems);
+                
+                // Construire le success_url avec le payment_id
+                $frontendUrl = Shortcut::getFrontendUrl($request);
+                $successUrl = $frontendUrl . '/paiement-reussi?payment_id=' . $payment->id;
+                $errorUrl = $frontendUrl . '/checkout';
                 
                 $paymentResult = $faykoService->makePayment([
                     'payment_method' => $paymentMethod,
@@ -386,13 +422,17 @@ class AccountController extends Controller
                         'origin' => 'kssv',
                         'order_reference' => $reference,
                         'user_id' => $user->id,
+                        'payment_id' => $payment->id,
                     ],
-                    'error_url' => config('app.frontend_url', 'https://id-preview--530ec94f-163a-42dd-8628-1ce9b9206e7c.lovable.app'),
-                    'success_url' => config('app.frontend_url', 'https://id-preview--530ec94f-163a-42dd-8628-1ce9b9206e7c.lovable.app') . '/checkout/success',
+                    'error_url' => $errorUrl,
+                    'success_url' => $successUrl,
                 ]);
                 
                 if (!$paymentResult['success']) {
-                    // Annuler la commande si Fayko échoue
+                    // Annuler le paiement et la commande si Fayko échoue
+                    $payment->status = 'failed';
+                    $payment->save();
+                    
                     $order->status = 'failed';
                     $order->save();
                     
@@ -406,6 +446,7 @@ class AccountController extends Controller
                     
                     Log::error('API Account: Échec initialisation paiement Fayko', [
                         'order_id' => $order->id,
+                        'payment_id' => $payment->id,
                         'error' => $paymentResult['message'] ?? 'Unknown error'
                     ]);
                     
@@ -414,15 +455,9 @@ class AccountController extends Controller
                         'message' => $paymentResult['message'] ?? 'Erreur lors de l\'initialisation du paiement'
                     ], 500);
                 }
-
-                // Créer le paiement en statut pending
-                $payment = Payment::create([
-                    'order_id' => $order->id,
-                    'amount' => $order->total,
-                    'paid_by' => $paymentMethod,
-                    'date' => now(),
-                    'reference' => $order->reference,
-                    'status' => 'pending',
+                
+                // Mettre à jour le paiement avec les infos Fayko
+                $payment->update([
                     'payment_link' => $paymentResult['payment_link'] ?? null,
                     'expires_at' => isset($paymentResult['when_expires']) 
                         ? \Carbon\Carbon::parse($paymentResult['when_expires']) 
@@ -434,6 +469,47 @@ class AccountController extends Controller
                     'order_id' => $order->id,
                     'payment_link' => $paymentResult['payment_link'] ?? null
                 ]);
+                
+                // Récupérer les articles pour l'email
+                $orderItems = Cart::where('order_id', $order->id)->get();
+                
+                // Envoyer email de confirmation au client (paiement en ligne = payé)
+                try {
+                    Mail::to($user->email)->send(new OrderConfirmationMail($user, $order, $orderItems, true));
+                    Log::info('API Account: Email confirmation (payé) envoyé au client', ['order_id' => $order->id]);
+                } catch (\Exception $emailError) {
+                    Log::error('API Account: Erreur envoi email confirmation', ['error' => $emailError->getMessage()]);
+                }
+                
+                // Envoyer alerte à l'admin
+                try {
+                    $appInfo = AppInfo::first();
+                    if ($appInfo && $appInfo->email1) {
+                        Mail::to($appInfo->email1)->send(new NewOrderAlertMail($user, $order, $orderItems->count(), $paymentMethod));
+                        Log::info('API Account: Alerte nouvelle commande envoyée à admin', ['email' => $appInfo->email1]);
+                    }
+                } catch (\Exception $emailError) {
+                    Log::error('API Account: Erreur envoi alerte admin', ['error' => $emailError->getMessage()]);
+                }
+                
+                // SMS confirmation au client (commande payée)
+                try {
+                    $smsService = new \App\Services\NotificationsService();
+                    $clientPhone = '+' . ($user->ccphone ?? '221') . $user->phone;
+                    $smsService->sendOrderConfirmationSms($clientPhone, $order->reference, $order->total, true);
+                    Log::info('API Account: SMS confirmation (payé) envoyé au client', ['phone' => $clientPhone]);
+                } catch (\Exception $smsError) {
+                    Log::error('API Account: Erreur envoi SMS confirmation client', ['error' => $smsError->getMessage()]);
+                }
+                
+                // SMS alerte à l'admin
+                try {
+                    $smsService = new \App\Services\NotificationsService();
+                    $smsService->sendNewOrderAlertSms($order->reference, $user->name, $order->total, $paymentMethod);
+                    Log::info('API Account: SMS alerte nouvelle commande envoyé à admin');
+                } catch (\Exception $smsError) {
+                    Log::error('API Account: Erreur envoi SMS admin', ['error' => $smsError->getMessage()]);
+                }
                 
                 // Retourner les infos de paiement Fayko
                 return response()->json([
@@ -450,6 +526,47 @@ class AccountController extends Controller
                         'when_expires' => $paymentResult['when_expires'] ?? null,
                     ]
                 ], 201);
+            }
+
+            // Récupérer les articles pour l'email
+            $orderItems = Cart::where('order_id', $order->id)->get();
+            
+            // Envoyer email de confirmation au client (COD = non payé)
+            try {
+                Mail::to($user->email)->send(new OrderConfirmationMail($user, $order, $orderItems, false));
+                Log::info('API Account: Email confirmation envoyé au client', ['order_id' => $order->id, 'email' => $user->email]);
+            } catch (\Exception $emailError) {
+                Log::error('API Account: Erreur envoi email confirmation client', ['error' => $emailError->getMessage()]);
+            }
+            
+            // Envoyer alerte à l'admin (appInfo->email1)
+            try {
+                $appInfo = AppInfo::first();
+                if ($appInfo && $appInfo->email1) {
+                    Mail::to($appInfo->email1)->send(new NewOrderAlertMail($user, $order, $orderItems->count(), $paymentMethod));
+                    Log::info('API Account: Alerte nouvelle commande envoyée à admin', ['email' => $appInfo->email1]);
+                }
+            } catch (\Exception $emailError) {
+                Log::error('API Account: Erreur envoi alerte admin', ['error' => $emailError->getMessage()]);
+            }
+            
+            // SMS confirmation au client (commande COD = non payée)
+            try {
+                $smsService = new \App\Services\NotificationsService();
+                $clientPhone = '+' . ($user->ccphone ?? '221') . $user->phone;
+                $smsService->sendOrderConfirmationSms($clientPhone, $order->reference, $order->total, false);
+                Log::info('API Account: SMS confirmation envoyé au client', ['phone' => $clientPhone]);
+            } catch (\Exception $smsError) {
+                Log::error('API Account: Erreur envoi SMS confirmation client', ['error' => $smsError->getMessage()]);
+            }
+            
+            // SMS alerte à l'admin
+            try {
+                $smsService = new \App\Services\NotificationsService();
+                $smsService->sendNewOrderAlertSms($order->reference, $user->name, $order->total, $paymentMethod);
+                Log::info('API Account: SMS alerte nouvelle commande envoyé à admin');
+            } catch (\Exception $smsError) {
+                Log::error('API Account: Erreur envoi SMS admin', ['error' => $smsError->getMessage()]);
             }
 
             // Paiement à la livraison - réponse classique
@@ -668,5 +785,198 @@ class AccountController extends Controller
             $lines[] = "{$item->qty}x {$name}";
         }
         return implode(', ', $lines);
+    }
+
+    /**
+     * POST /api/account/avatar
+     * Upload/Update de la photo de profil
+     */
+    public function updateAvatar(Request $request): JsonResponse
+    {
+        try {
+            $request->validate([
+                'avatar' => 'required|image|max:2048', // Max 2MB
+            ]);
+
+            $user = $request->user();
+            
+            // Supprimer l'ancien avatar si existe
+            if ($user->avatar) {
+                $oldPath = public_path($user->avatar);
+                if (file_exists($oldPath)) {
+                    unlink($oldPath);
+                }
+            }
+            
+            // Sauvegarder le nouvel avatar
+            $file = $request->file('avatar');
+            $fileName = 'avatar-' . $user->id . '-' . time() . '.' . $file->getClientOriginalExtension();
+            $file->move(public_path('uploads/avatars'), $fileName);
+            
+            $avatarPath = 'uploads/avatars/' . $fileName;
+            $user->avatar = $avatarPath;
+            $user->save();
+            
+            // Mettre à jour le localStorage côté client
+            Log::info('API Account: Avatar mis à jour', [
+                'user_id' => $user->id,
+                'avatar' => $avatarPath
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Photo de profil mise à jour',
+                'avatar' => asset($avatarPath),
+                'user' => [
+                    'id' => $user->id,
+                    'name' => $user->name,
+                    'email' => $user->email,
+                    'ccphone' => $user->ccphone,
+                    'phone' => $user->phone,
+                    'reference' => $user->reference,
+                    'account_type' => $user->account_type,
+                    'avatar' => asset($avatarPath),
+                ]
+            ]);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Format ou taille de fichier invalide (max 2MB)',
+                'errors' => $e->errors()
+            ], 422);
+        } catch (\Exception $e) {
+            Log::error('API Account: Erreur upload avatar', [
+                'user_id' => $request->user()?->id,
+                'error' => $e->getMessage()
+            ]);
+            return response()->json([
+                'success' => false,
+                'message' => 'Erreur lors de l\'upload de la photo'
+            ], 500);
+        }
+    }
+
+    /**
+     * GET /api/order/{paymentId}
+     * Route PUBLIQUE - Récupérer les détails d'une commande via payment_id
+     * Utilisée par la page de succès de paiement
+     */
+    public function getOrderByPayment(int $paymentId): JsonResponse
+    {
+        try {
+            Log::info('API Account: Accès public order par payment_id', ['payment_id' => $paymentId]);
+            
+            // Trouver le paiement
+            $payment = Payment::with('order')->find($paymentId);
+            
+            if (!$payment || !$payment->order) {
+                Log::warning('API Account: Paiement non trouvé', ['payment_id' => $paymentId]);
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Paiement non trouvé'
+                ], 404);
+            }
+            
+            $order = $payment->order;
+            $user = User::find($order->user_id);
+            $cartItems = Cart::where('order_id', $order->id)->get();
+            
+            // Vérifier le statut du paiement
+            $isPaid = $payment->status === 'success' || $order->payment_status === 'paid';
+            
+            // Mapper les items
+            $items = $cartItems->map(function($cart) {
+                $itemInfos = is_string($cart->item_infos) 
+                    ? json_decode($cart->item_infos, true) 
+                    : $cart->item_infos;
+                    
+                return [
+                    'id' => $cart->id,
+                    'item_id' => $cart->item_id,
+                    'item_infos' => $itemInfos ?? [],
+                    'price' => (float) $cart->price,
+                    'qty' => $cart->qty,
+                    'total' => (float) $cart->price * $cart->qty,
+                ];
+            });
+            
+            // Calculer le résumé
+            $subtotal = $items->sum('total');
+            $totalPaid = $isPaid ? (float) $payment->amount : 0;
+            
+            Log::info('API Account: Order récupéré via payment_id', [
+                'payment_id' => $paymentId,
+                'order_id' => $order->id,
+                'is_paid' => $isPaid,
+                'payment_status' => $payment->status
+            ]);
+            
+            return response()->json([
+                'success' => true,
+                'is_paid' => $isPaid,
+                'payment_status' => $payment->status,
+                'data' => [
+                    'payment' => [
+                        'id' => $payment->id,
+                        'reference' => $payment->reference,
+                        'amount' => (float) $payment->amount,
+                        'status' => $payment->status,
+                        'paid_by' => $payment->paid_by,
+                        'date' => $payment->date?->format('d/m/Y'),
+                    ],
+                    'order' => [
+                        'id' => $order->id,
+                        'reference' => $order->reference,
+                        'total' => (float) $order->total,
+                        'discount' => (float) ($order->discount ?? 0),
+                        'status' => $order->status,
+                        'payment_status' => $order->payment_status ?? 'pending',
+                        'delivery_status' => $order->delivery_status ?? 'pending',
+                        'payment_method' => $order->payment_method,
+                        'address' => $order->address,
+                        'city' => $order->city,
+                        'created_at' => $order->created_at->format('d/m/Y H:i'),
+                        'updated_at' => $order->updated_at->format('d/m/Y H:i'),
+                    ],
+                    'client' => [
+                        'id' => $user?->id,
+                        'name' => $user?->name ?? 'Client',
+                        'email' => $user?->email ?? '',
+                        'phone' => ($user?->ccphone ?? '') . ' ' . ($user?->phone ?? ''),
+                    ],
+                    'promo_code' => $order->promoCode ? [
+                        'code' => $order->promoCode->code,
+                        'value' => $order->promoCode->discount_value,
+                    ] : null,
+                    'items' => $items,
+                    'payments' => [[
+                        'id' => $payment->id,
+                        'reference' => $payment->reference,
+                        'amount' => (float) $payment->amount,
+                        'paid_by' => $payment->paid_by,
+                        'payment_type' => 'online',
+                        'date' => $payment->date?->format('d/m/Y'),
+                        'created_at' => $payment->created_at->format('d/m/Y H:i'),
+                    ]],
+                    'summary' => [
+                        'subtotal' => $subtotal,
+                        'discount' => (float) ($order->discount ?? 0),
+                        'total' => (float) $order->total,
+                        'total_paid' => $totalPaid,
+                        'remaining' => (float) $order->total - $totalPaid,
+                    ],
+                ]
+            ]);
+        } catch (\Exception $e) {
+            Log::error('API Account: Erreur getOrderByPayment', [
+                'payment_id' => $paymentId,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            return response()->json([
+                'success' => false,
+                'message' => 'Erreur lors du chargement de la commande'
+            ], 500);
+        }
     }
 }

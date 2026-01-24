@@ -6,6 +6,7 @@ use App\Models\User;
 use App\Models\OtpCode;
 use App\Mail\OtpMail;
 use App\Mail\WelcomeMail;
+use App\Mail\AdminLoginAlertMail;
 use App\Helpers\Shortcut;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
@@ -65,6 +66,21 @@ class AuthController extends Controller
                 'account_type' => $user->account_type,
                 'token_expires_at' => $expiresAt->toDateTimeString()
             ]);
+
+            // Envoyer email d'alerte de connexion pour les admins
+            if ($user->account_type === 'admin') {
+                try {
+                    Mail::to($user->email)->send(new AdminLoginAlertMail(
+                        $user,
+                        $request->ip() ?? 'IP inconnue',
+                        now()->format('d/m/Y à H:i'),
+                        $request->userAgent() ?? 'Navigateur inconnu'
+                    ));
+                    Log::info('API Auth: Email alerte connexion admin envoyé', ['user_id' => $user->id]);
+                } catch (\Exception $emailError) {
+                    Log::error('API Auth: Erreur envoi email alerte connexion', ['error' => $emailError->getMessage()]);
+                }
+            }
 
             return response()->json([
                 'success' => true,
@@ -243,6 +259,16 @@ class AuthController extends Controller
 
             // Send welcome email
             Mail::to($user->email)->send(new WelcomeMail($user));
+
+            // Envoyer SMS de bienvenue au client
+            try {
+                $smsService = new \App\Services\NotificationsService();
+                $phoneNumber = '+' . ($user->ccphone ?? '221') . $user->phone;
+                $smsService->sendWelcomeSms($phoneNumber, $user->name, $user->reference);
+                Log::info('API Auth: SMS bienvenue envoyé', ['phone' => $phoneNumber]);
+            } catch (\Exception $smsError) {
+                Log::error('API Auth: Erreur envoi SMS bienvenue', ['error' => $smsError->getMessage()]);
+            }
 
             // Create token with 30 days expiration for clients
             $expiresAt = now()->addDays(30);

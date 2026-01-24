@@ -942,11 +942,10 @@ class AdminController extends Controller
             
             Log::info('API Admin: Update AppInfo');
             
-            // Champs texte
+            // Champs texte (sans les champs d'adresse - maintenant gérés via addresses JSON)
             $appInfo->fill($request->only([
                 'name', 'ccphone1', 'phone1', 'ccphone2', 'phone2',
-                'email1', 'email2', 'latitude', 'longitude',
-                'address', 'town', 'country', 'maintenance', 'show_only_with_images'
+                'email1', 'email2', 'maintenance', 'show_only_with_images'
             ]));
             
             // Upload logo_color
@@ -985,6 +984,213 @@ class AdminController extends Controller
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString()
             ]);
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
+        }
+    }
+
+    // ============================================
+    // Address Management (JSON array in app_infos.addresses)
+    // ============================================
+
+    /**
+     * POST /api/admin/app-info/addresses
+     * Ajoute une nouvelle adresse
+     */
+    public function addAddress(Request $request): JsonResponse
+    {
+        try {
+            $request->validate([
+                'name' => 'required|string|max:255',
+                'address' => 'required|string|max:500',
+                'town' => 'required|string|max:255',
+                'country' => 'required|string|max:255',
+            ]);
+
+            $appInfo = AppInfo::first();
+            if (!$appInfo) {
+                $appInfo = AppInfo::create(['name' => 'KSSV']);
+            }
+
+            $addresses = $appInfo->addresses ?? [];
+            
+            // Generate unique ID
+            $newAddress = [
+                'id' => uniqid('addr_'),
+                'name' => $request->input('name'),
+                'address' => $request->input('address'),
+                'town' => $request->input('town'),
+                'country' => $request->input('country'),
+                'ccphone1' => $request->input('ccphone1'),
+                'phone1' => $request->input('phone1'),
+                'ccphone2' => $request->input('ccphone2'),
+                'phone2' => $request->input('phone2'),
+                'latitude' => $request->input('latitude') ? (float) $request->input('latitude') : null,
+                'longitude' => $request->input('longitude') ? (float) $request->input('longitude') : null,
+                'is_default' => $request->boolean('is_default') || empty($addresses),
+            ];
+
+            // If this is set as default, unset all others
+            if ($newAddress['is_default']) {
+                foreach ($addresses as &$addr) {
+                    $addr['is_default'] = false;
+                }
+            }
+
+            $addresses[] = $newAddress;
+            $appInfo->addresses = $addresses;
+            $appInfo->save();
+
+            Log::info('API Admin: Adresse ajoutée', ['address_id' => $newAddress['id']]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Adresse ajoutée',
+                'data' => $newAddress,
+                'addresses' => $addresses
+            ]);
+        } catch (\Exception $e) {
+            Log::error('API Admin: Erreur ajout adresse', ['error' => $e->getMessage()]);
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * PUT /api/admin/app-info/addresses/{addressId}
+     * Met à jour une adresse
+     */
+    public function updateAddress(Request $request, string $addressId): JsonResponse
+    {
+        try {
+            $appInfo = AppInfo::first();
+            if (!$appInfo) {
+                return response()->json(['success' => false, 'message' => 'AppInfo non trouvé'], 404);
+            }
+
+            $addresses = $appInfo->addresses ?? [];
+            $found = false;
+
+            foreach ($addresses as &$addr) {
+                if (($addr['id'] ?? '') === $addressId) {
+                    $addr['name'] = $request->input('name', $addr['name'] ?? '');
+                    $addr['address'] = $request->input('address', $addr['address'] ?? '');
+                    $addr['town'] = $request->input('town', $addr['town'] ?? '');
+                    $addr['country'] = $request->input('country', $addr['country'] ?? '');
+                    $addr['ccphone1'] = $request->input('ccphone1', $addr['ccphone1'] ?? null);
+                    $addr['phone1'] = $request->input('phone1', $addr['phone1'] ?? null);
+                    $addr['ccphone2'] = $request->input('ccphone2', $addr['ccphone2'] ?? null);
+                    $addr['phone2'] = $request->input('phone2', $addr['phone2'] ?? null);
+                    $addr['latitude'] = $request->input('latitude') ? (float) $request->input('latitude') : ($addr['latitude'] ?? null);
+                    $addr['longitude'] = $request->input('longitude') ? (float) $request->input('longitude') : ($addr['longitude'] ?? null);
+                    $found = true;
+                    break;
+                }
+            }
+
+            if (!$found) {
+                return response()->json(['success' => false, 'message' => 'Adresse non trouvée'], 404);
+            }
+
+            $appInfo->addresses = $addresses;
+            $appInfo->save();
+
+            Log::info('API Admin: Adresse mise à jour', ['address_id' => $addressId]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Adresse mise à jour',
+                'addresses' => $addresses
+            ]);
+        } catch (\Exception $e) {
+            Log::error('API Admin: Erreur update adresse', ['error' => $e->getMessage()]);
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * DELETE /api/admin/app-info/addresses/{addressId}
+     * Supprime une adresse
+     */
+    public function deleteAddress(string $addressId): JsonResponse
+    {
+        try {
+            $appInfo = AppInfo::first();
+            if (!$appInfo) {
+                return response()->json(['success' => false, 'message' => 'AppInfo non trouvé'], 404);
+            }
+
+            $addresses = $appInfo->addresses ?? [];
+            $newAddresses = [];
+            $wasDefault = false;
+
+            foreach ($addresses as $addr) {
+                if (($addr['id'] ?? '') !== $addressId) {
+                    $newAddresses[] = $addr;
+                } else {
+                    $wasDefault = $addr['is_default'] ?? false;
+                }
+            }
+
+            // If we deleted the default and there are still addresses, make first one default
+            if ($wasDefault && !empty($newAddresses)) {
+                $newAddresses[0]['is_default'] = true;
+            }
+
+            $appInfo->addresses = $newAddresses;
+            $appInfo->save();
+
+            Log::info('API Admin: Adresse supprimée', ['address_id' => $addressId]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Adresse supprimée',
+                'addresses' => $newAddresses
+            ]);
+        } catch (\Exception $e) {
+            Log::error('API Admin: Erreur suppression adresse', ['error' => $e->getMessage()]);
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * PUT /api/admin/app-info/addresses/{addressId}/default
+     * Définit une adresse comme par défaut
+     */
+    public function setDefaultAddress(string $addressId): JsonResponse
+    {
+        try {
+            $appInfo = AppInfo::first();
+            if (!$appInfo) {
+                return response()->json(['success' => false, 'message' => 'AppInfo non trouvé'], 404);
+            }
+
+            $addresses = $appInfo->addresses ?? [];
+            $found = false;
+
+            foreach ($addresses as &$addr) {
+                if (($addr['id'] ?? '') === $addressId) {
+                    $addr['is_default'] = true;
+                    $found = true;
+                } else {
+                    $addr['is_default'] = false;
+                }
+            }
+
+            if (!$found) {
+                return response()->json(['success' => false, 'message' => 'Adresse non trouvée'], 404);
+            }
+
+            $appInfo->addresses = $addresses;
+            $appInfo->save();
+
+            Log::info('API Admin: Adresse définie par défaut', ['address_id' => $addressId]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Adresse définie comme principale',
+                'addresses' => $addresses
+            ]);
+        } catch (\Exception $e) {
+            Log::error('API Admin: Erreur set default adresse', ['error' => $e->getMessage()]);
             return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
         }
     }
@@ -2206,10 +2412,11 @@ class AdminController extends Controller
                 'activation_token_expires_at' => now()->addHours(72),
             ]);
             
-            // Envoyer l'email d'invitation
-            \Mail::to($admin->email)->send(new \App\Mail\AdminInvitationMail($admin, $activationToken));
+            // Envoyer l'email d'invitation avec l'URL frontend dynamique
+            $frontendUrl = Shortcut::getFrontendUrl($request);
+            \Mail::to($admin->email)->send(new \App\Mail\AdminInvitationMail($admin, $activationToken, $frontendUrl));
             
-            Log::info('API Admin: Admin créé et invitation envoyée', ['admin_id' => $admin->id]);
+            Log::info('API Admin: Admin créé et invitation envoyée', ['admin_id' => $admin->id, 'frontend_url' => $frontendUrl]);
             
             return response()->json([
                 'success' => true,
@@ -2277,10 +2484,11 @@ class AdminController extends Controller
                 'activation_token_expires_at' => now()->addHours(72),
             ]);
             
-            // Envoyer l'email
-            \Mail::to($admin->email)->send(new \App\Mail\AdminInvitationMail($admin, $activationToken));
+            // Envoyer l'email avec l'URL frontend dynamique
+            $frontendUrl = Shortcut::getFrontendUrl($request);
+            \Mail::to($admin->email)->send(new \App\Mail\AdminInvitationMail($admin, $activationToken, $frontendUrl));
             
-            Log::info('API Admin: Invitation renvoyée', ['admin_id' => $id]);
+            Log::info('API Admin: Invitation renvoyée', ['admin_id' => $id, 'frontend_url' => $frontendUrl]);
             
             return response()->json(['success' => true, 'message' => 'Invitation renvoyée avec succès']);
         } catch (\Exception $e) {

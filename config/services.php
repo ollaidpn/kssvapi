@@ -35,6 +35,13 @@ return [
         'public_key' => env('FAYKO_PUBLIC_KEY'),
         'secret_key' => env('FAYKO_SECRET_KEY'),
         'webhook_key' => env('FAYKO_WEBHOOK_KEY'),
+        'mode' => env('FAYKO_MODE', 'LIVE'), // TEST ou LIVE
+    ],
+
+    'intech_sms' => [
+        'app_key' => env('INTECH_SMS_APP_KEY', '68863D3BABAEA68863D3BABAEB'),
+        'sender' => env('INTECH_SMS_SENDER', 'KSSV'),
+        'endpoint' => env('INTECH_SMS_ENDPOINT', 'https://gateway.intechsms.sn/api/send-sms'),
     ],
 
 ];

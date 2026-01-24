@@ -3,29 +3,36 @@
 namespace App\Mail;
 
 use App\Models\User;
+use App\Models\Order;
+use App\Models\AppInfo;
+use App\Helpers\Shortcut;
 use Illuminate\Bus\Queueable;
-use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Mail\Mailable;
 use Illuminate\Mail\Mailables\Content;
 use Illuminate\Mail\Mailables\Envelope;
 use Illuminate\Queue\SerializesModels;
+use Illuminate\Support\Collection;
 
-class AdminInvitationMail extends Mailable
+class OrderConfirmationMail extends Mailable
 {
     use Queueable, SerializesModels;
 
-    public User $admin;
-    public string $activationToken;
-    public string $frontendUrl;
+    public User $user;
+    public Order $order;
+    public Collection $items;
+    public bool $isPaid;
+    public ?AppInfo $appInfo;
 
     /**
      * Create a new message instance.
      */
-    public function __construct(User $admin, string $activationToken, ?string $frontendUrl = null)
+    public function __construct(User $user, Order $order, Collection $items, bool $isPaid = false)
     {
-        $this->admin = $admin;
-        $this->activationToken = $activationToken;
-        $this->frontendUrl = $frontendUrl ?? config('app.frontend_url', config('app.url'));
+        $this->user = $user;
+        $this->order = $order;
+        $this->items = $items;
+        $this->isPaid = $isPaid;
+        $this->appInfo = AppInfo::first();
     }
 
     /**
@@ -33,8 +40,9 @@ class AdminInvitationMail extends Mailable
      */
     public function envelope(): Envelope
     {
+        $status = $this->isPaid ? '✅ Confirmée et Payée' : '📦 Confirmée';
         return new Envelope(
-            subject: '🎉 Invitation Administrateur - KSSV',
+            subject: "Commande {$this->order->reference} - {$status}",
         );
     }
 
@@ -44,14 +52,12 @@ class AdminInvitationMail extends Mailable
     public function content(): Content
     {
         return new Content(
-            view: 'emails.admin-invitation',
+            view: 'emails.order-confirmation',
         );
     }
 
     /**
      * Get the attachments for the message.
-     *
-     * @return array<int, \Illuminate\Mail\Mailables\Attachment>
      */
     public function attachments(): array
     {

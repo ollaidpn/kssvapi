@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Helpers\Shortcut;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
@@ -28,8 +29,13 @@ class FaykoPaymentService
     public function makePayment(array $payload): array
     {
         try {
+            // Utiliser le helper pour obtenir le montant (mode TEST = 10 FCFA)
+            $amount = Shortcut::getFaykoAmount((float) ($payload['amount'] ?? 0));
+            
             Log::info('FaykoPaymentService: Initialisation paiement', [
-                'amount' => $payload['amount'] ?? null,
+                'original_amount' => $payload['amount'] ?? null,
+                'final_amount' => $amount,
+                'mode' => config('services.fayko.mode', 'LIVE'),
                 'qty' => $payload['qty'] ?? 1,
                 'payment_method' => $payload['payment_method'] ?? null,
                 'order_reference' => $payload['extra_data']['order_reference'] ?? null,
@@ -42,7 +48,7 @@ class FaykoPaymentService
                 'client_name' => $payload['client_name'] ?? 'Client',
                 'name'        => $payload['name'] ?? 'Commande',
                 'description' => $payload['description'] ?? 'Achat sur KSSV',
-                'amount'      => (int) $payload['amount'],
+                'amount'      => $amount,  // Montant via helper (toujours integer)
                 'qty'         => (int) ($payload['qty'] ?? 1),
                 'paid_by'     => $paidBy,
                 'ccphone'     => $payload['ccphone'] ?? '+221',

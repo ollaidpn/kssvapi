@@ -4,28 +4,29 @@ namespace App\Mail;
 
 use App\Models\User;
 use Illuminate\Bus\Queueable;
-use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Mail\Mailable;
 use Illuminate\Mail\Mailables\Content;
 use Illuminate\Mail\Mailables\Envelope;
 use Illuminate\Queue\SerializesModels;
 
-class AdminInvitationMail extends Mailable
+class AdminLoginAlertMail extends Mailable
 {
     use Queueable, SerializesModels;
 
-    public User $admin;
-    public string $activationToken;
-    public string $frontendUrl;
+    public User $user;
+    public string $ipAddress;
+    public string $loginTime;
+    public string $userAgent;
 
     /**
      * Create a new message instance.
      */
-    public function __construct(User $admin, string $activationToken, ?string $frontendUrl = null)
+    public function __construct(User $user, string $ipAddress, string $loginTime, string $userAgent)
     {
-        $this->admin = $admin;
-        $this->activationToken = $activationToken;
-        $this->frontendUrl = $frontendUrl ?? config('app.frontend_url', config('app.url'));
+        $this->user = $user;
+        $this->ipAddress = $ipAddress;
+        $this->loginTime = $loginTime;
+        $this->userAgent = $userAgent;
     }
 
     /**
@@ -34,7 +35,7 @@ class AdminInvitationMail extends Mailable
     public function envelope(): Envelope
     {
         return new Envelope(
-            subject: '🎉 Invitation Administrateur - KSSV',
+            subject: '🔐 Nouvelle connexion à votre compte KSSV',
         );
     }
 
@@ -44,14 +45,12 @@ class AdminInvitationMail extends Mailable
     public function content(): Content
     {
         return new Content(
-            view: 'emails.admin-invitation',
+            view: 'emails.admin-login-alert',
         );
     }
 
     /**
      * Get the attachments for the message.
-     *
-     * @return array<int, \Illuminate\Mail\Mailables\Attachment>
      */
     public function attachments(): array
     {

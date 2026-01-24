@@ -392,6 +392,47 @@ class LocalController extends Controller
             ]);
         }
     }
+
+    /**
+     * Get app info (public endpoint for contact page)
+     */
+    public function getAppInfo(): JsonResponse
+    {
+        try {
+            $appInfo = \App\Models\AppInfo::first();
+            
+            if (!$appInfo) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Informations non disponibles'
+                ], 404);
+            }
+            
+            return response()->json([
+                'success' => true,
+                'data' => [
+                    'name' => $appInfo->name,
+                    'ccphone1' => $appInfo->ccphone1,
+                    'phone1' => $appInfo->phone1,
+                    'ccphone2' => $appInfo->ccphone2,
+                    'phone2' => $appInfo->phone2,
+                    'email1' => $appInfo->email1,
+                    'email2' => $appInfo->email2,
+                    'latitude' => $appInfo->latitude,
+                    'longitude' => $appInfo->longitude,
+                    'logo_color' => Shortcut::fileExistsOnServer($appInfo->logo_color),
+                    'logo_white' => Shortcut::fileExistsOnServer($appInfo->logo_white),
+                    'address' => $appInfo->address,
+                    'town' => $appInfo->town,
+                    'country' => $appInfo->country,
+                ]
+            ]);
+            
+        } catch (\Exception $e) {
+            Log::error('LocalController::getAppInfo error', ['error' => $e->getMessage()]);
+            return response()->json(['success' => false, 'message' => 'Erreur'], 500);
+        }
+    }
     
     /**
      * Transform product model to API response format

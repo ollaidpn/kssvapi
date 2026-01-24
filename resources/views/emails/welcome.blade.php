@@ -10,12 +10,11 @@
         <tr>
             <td align="center" style="padding: 40px 20px;">
                 <table role="presentation" style="width: 100%; max-width: 600px; border-collapse: collapse; background-color: #ffffff; border-radius: 16px; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);">
-                    <!-- Header with celebration -->
+                    <!-- Header -->
                     <tr>
-                        <td style="padding: 40px 40px 20px; text-align: center; background: linear-gradient(135deg, #B8860B 0%, #DAA520 50%, #FFD700 100%); border-radius: 16px 16px 0 0;">
-                            <div style="font-size: 48px; margin-bottom: 15px;">🎉</div>
-                            <h1 style="margin: 0; color: #ffffff; font-size: 28px; font-weight: 700; text-shadow: 0 2px 4px rgba(0,0,0,0.2);">
-                                Bienvenue chez KSSV !
+                        <td style="padding: 40px 40px 20px; text-align: center; background: linear-gradient(135deg, #000080 0%, #0000a0 100%); border-radius: 16px 16px 0 0;">
+                            <h1 style="margin: 0; color: #ffffff; font-size: 32px; font-weight: 700;">
+                                🎉 Bienvenue !
                             </h1>
                             <p style="margin: 10px 0 0; color: rgba(255,255,255,0.9); font-size: 16px;">
                                 Keur Serigne Saliou Vaisselle
@@ -26,102 +25,92 @@
                     <!-- Content -->
                     <tr>
                         <td style="padding: 40px;">
-                            <h2 style="margin: 0 0 20px; color: #1a1a1a; font-size: 22px; font-weight: 600;">
-                                Bonjour {{ $user->name }} 👋
-                            </h2>
+                            <p style="margin: 0 0 20px; color: #333333; font-size: 18px; line-height: 1.6;">
+                                Bonjour <strong>{{ $user->name }}</strong>,
+                            </p>
                             
-                            <p style="margin: 0 0 20px; color: #666666; font-size: 16px; line-height: 1.6;">
-                                Nous sommes ravis de vous compter parmi notre famille KSSV ! Votre compte a été créé avec succès.
+                            <p style="margin: 0 0 30px; color: #555555; font-size: 16px; line-height: 1.6;">
+                                Nous sommes ravis de vous accueillir parmi nos clients ! Votre compte a été créé avec succès sur notre plateforme.
                             </p>
 
-                            <!-- Account Info -->
-                            <div style="background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%); border-radius: 12px; padding: 25px; margin: 25px 0;">
-                                <h3 style="margin: 0 0 15px; color: #1a1a1a; font-size: 16px; font-weight: 600;">
-                                    📋 Vos informations de compte
+                            <!-- Account Info Box -->
+                            <div style="background-color: #f8f9fa; border-radius: 12px; padding: 24px; margin-bottom: 30px;">
+                                <h3 style="margin: 0 0 16px; color: #000080; font-size: 16px; font-weight: 600;">
+                                    📋 Vos informations
                                 </h3>
-                                <table style="width: 100%; border-collapse: collapse;">
+                                <table role="presentation" style="width: 100%; border-collapse: collapse;">
                                     <tr>
-                                        <td style="padding: 8px 0; color: #999999; font-size: 14px;">Référence client :</td>
-                                        <td style="padding: 8px 0; color: #B8860B; font-size: 14px; font-weight: 600; text-align: right;">{{ $user->reference }}</td>
+                                        <td style="padding: 8px 0; color: #666666; font-size: 14px; width: 140px;">Référence client</td>
+                                        <td style="padding: 8px 0; color: #333333; font-size: 14px; font-weight: 500;">{{ $user->reference }}</td>
                                     </tr>
                                     <tr>
-                                        <td style="padding: 8px 0; color: #999999; font-size: 14px;">Email :</td>
-                                        <td style="padding: 8px 0; color: #1a1a1a; font-size: 14px; text-align: right;">{{ $user->email }}</td>
+                                        <td style="padding: 8px 0; color: #666666; font-size: 14px;">Email</td>
+                                        <td style="padding: 8px 0; color: #333333; font-size: 14px; font-weight: 500;">{{ $user->email }}</td>
                                     </tr>
                                     <tr>
-                                        <td style="padding: 8px 0; color: #999999; font-size: 14px;">Téléphone :</td>
-                                        <td style="padding: 8px 0; color: #1a1a1a; font-size: 14px; text-align: right;">+{{ $user->ccphone }} {{ $user->phone }}</td>
+                                        <td style="padding: 8px 0; color: #666666; font-size: 14px;">Téléphone</td>
+                                        <td style="padding: 8px 0; color: #333333; font-size: 14px; font-weight: 500;">{{ $user->ccphone }} {{ $user->phone }}</td>
                                     </tr>
                                 </table>
                             </div>
 
                             <!-- Benefits -->
-                            <h3 style="margin: 30px 0 20px; color: #1a1a1a; font-size: 18px; font-weight: 600;">
-                                ✨ Ce que vous pouvez faire maintenant
-                            </h3>
-                            
-                            <table style="width: 100%; border-collapse: collapse;">
+                            <div style="margin-bottom: 30px;">
+                                <h3 style="margin: 0 0 16px; color: #333333; font-size: 16px; font-weight: 600;">
+                                    ✨ Ce que vous pouvez faire
+                                </h3>
+                                <ul style="margin: 0; padding-left: 20px; color: #555555; font-size: 14px; line-height: 2;">
+                                    <li>Parcourir notre catalogue de vaisselle et articles ménagers</li>
+                                    <li>Passer des commandes en ligne en toute sécurité</li>
+                                    <li>Suivre vos commandes en temps réel</li>
+                                    <li>Bénéficier de promotions exclusives</li>
+                                </ul>
+                            </div>
+
+                            <!-- CTA Button -->
+                            <table role="presentation" style="width: 100%; border-collapse: collapse;">
                                 <tr>
-                                    <td style="padding: 12px 0; vertical-align: top;">
-                                        <span style="display: inline-block; width: 32px; height: 32px; background-color: #fff8e1; border-radius: 50%; text-align: center; line-height: 32px; margin-right: 12px;">🛒</span>
-                                    </td>
-                                    <td style="padding: 12px 0; color: #666666; font-size: 14px; line-height: 1.5;">
-                                        <strong style="color: #1a1a1a;">Commander en ligne</strong><br>
-                                        Parcourez notre catalogue et commandez en quelques clics
-                                    </td>
-                                </tr>
-                                <tr>
-                                    <td style="padding: 12px 0; vertical-align: top;">
-                                        <span style="display: inline-block; width: 32px; height: 32px; background-color: #fff8e1; border-radius: 50%; text-align: center; line-height: 32px; margin-right: 12px;">📦</span>
-                                    </td>
-                                    <td style="padding: 12px 0; color: #666666; font-size: 14px; line-height: 1.5;">
-                                        <strong style="color: #1a1a1a;">Suivre vos commandes</strong><br>
-                                        Accédez à l'historique et au suivi de toutes vos commandes
-                                    </td>
-                                </tr>
-                                <tr>
-                                    <td style="padding: 12px 0; vertical-align: top;">
-                                        <span style="display: inline-block; width: 32px; height: 32px; background-color: #fff8e1; border-radius: 50%; text-align: center; line-height: 32px; margin-right: 12px;">🎁</span>
-                                    </td>
-                                    <td style="padding: 12px 0; color: #666666; font-size: 14px; line-height: 1.5;">
-                                        <strong style="color: #1a1a1a;">Offres exclusives</strong><br>
-                                        Profitez de promotions réservées à nos membres
+                                    <td align="center" style="padding: 10px 0;">
+                                        <table role="presentation" style="border-collapse: collapse;">
+                                            <tr>
+                                                <td style="border-radius: 8px; background: linear-gradient(135deg, #fd7f07 0%, #e56b00 100%);">
+                                                    <a href="{{ config('app.frontend_url') }}"
+                                                       target="_blank"
+                                                       style="display: inline-block; padding: 16px 40px; font-size: 16px; font-weight: 600; color: #ffffff; text-decoration: none;">
+                                                        Découvrir nos produits
+                                                    </a>
+                                                </td>
+                                            </tr>
+                                        </table>
                                     </td>
                                 </tr>
                             </table>
-
-                            <!-- CTA Button -->
-                            <div style="text-align: center; margin: 35px 0 20px;">
-                                <a href="{{ config('app.url') }}" style="display: inline-block; background: linear-gradient(135deg, #B8860B 0%, #DAA520 100%); color: #ffffff; text-decoration: none; padding: 16px 40px; border-radius: 8px; font-size: 16px; font-weight: 600; box-shadow: 0 4px 12px rgba(184, 134, 11, 0.3);">
-                                    Commencer mes achats →
-                                </a>
-                            </div>
                         </td>
                     </tr>
 
-                    <!-- Contact -->
+                    <!-- Contact Section -->
                     <tr>
-                        <td style="padding: 30px 40px; background-color: #1a1a1a; text-align: center;">
-                            <p style="margin: 0 0 15px; color: #ffffff; font-size: 16px; font-weight: 600;">
-                                Besoin d'aide ?
-                            </p>
-                            <p style="margin: 0 0 5px; color: #999999; font-size: 14px;">
-                                📞 +221 XX XXX XX XX
-                            </p>
-                            <p style="margin: 0; color: #999999; font-size: 14px;">
-                                ✉️ contact@kssv.sn
-                            </p>
+                        <td style="padding: 0 40px 30px;">
+                            <div style="background-color: #fff3e6; border-radius: 12px; padding: 20px; text-align: center;">
+                                <p style="margin: 0 0 10px; color: #333333; font-size: 14px; font-weight: 600;">
+                                    📞 Besoin d'aide ?
+                                </p>
+                                <p style="margin: 0; color: #555555; font-size: 14px;">
+                                    Contactez-nous au <strong>+221 76 644 16 71</strong><br>
+                                    ou par email : <strong>contact@kssv.sn</strong>
+                                </p>
+                            </div>
                         </td>
                     </tr>
 
                     <!-- Footer -->
                     <tr>
-                        <td style="padding: 25px 40px; background-color: #f8f9fa; border-radius: 0 0 16px 16px; text-align: center;">
-                            <p style="margin: 0 0 10px; color: #B8860B; font-size: 14px; font-weight: 600;">
+                        <td style="padding: 30px 40px; background-color: #f8f9fa; border-radius: 0 0 16px 16px; text-align: center;">
+                            <p style="margin: 0; color: #000080; font-size: 14px; font-weight: 600;">
                                 © {{ date('Y') }} KSSV - Keur Serigne Saliou Vaisselle
                             </p>
-                            <p style="margin: 0; color: #999999; font-size: 12px;">
-                                Dakar, Sénégal | La qualité au service de votre table
+                            <p style="margin: 10px 0 0; color: #999999; font-size: 12px;">
+                                Dakar, Sénégal
                             </p>
                         </td>
                     </tr>

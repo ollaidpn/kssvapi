@@ -49,6 +49,9 @@ Route::prefix('proxy')->group(function () {
 // ============================================
 
 Route::prefix('local')->group(function () {
+    // App Info (public for contact page)
+    Route::get('/app-info', [LocalController::class, 'getAppInfo']);
+    
     // Categories
     Route::get('/categories', [LocalController::class, 'getCategories']);
     Route::get('/categories/top', [LocalController::class, 'getTopCategories']);
@@ -95,6 +98,12 @@ Route::prefix('webhook')->group(function () {
 });
 
 // ============================================
+// Public Order Route (For Payment Success Page)
+// ============================================
+
+Route::get('/order/{paymentId}', [AccountController::class, 'getOrderByPayment']);
+
+// ============================================
 // Protected Routes (Requires Sanctum Token)
 // ============================================
 
@@ -111,6 +120,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/account/orders', [AccountController::class, 'orders']);
     Route::get('/account/orders/{id}', [AccountController::class, 'orderDetail']);
     Route::get('/account/payments', [AccountController::class, 'payments']);
+    Route::post('/account/avatar', [AccountController::class, 'updateAvatar']);
 
     // Orders - Create, Check, Cancel
     Route::post('/orders', [AccountController::class, 'createOrder']);
@@ -182,6 +192,12 @@ Route::middleware('auth:sanctum')->prefix('admin')->group(function () {
     Route::get('/app-info', [AdminController::class, 'getAppInfo']);
     Route::post('/app-info', [AdminController::class, 'updateAppInfo']);
     Route::post('/app-info/toggle-image-filter', [AdminController::class, 'toggleImageFilter']);
+    
+    // Addresses Management (JSON in app_infos.addresses)
+    Route::post('/app-info/addresses', [AdminController::class, 'addAddress']);
+    Route::put('/app-info/addresses/{addressId}', [AdminController::class, 'updateAddress']);
+    Route::delete('/app-info/addresses/{addressId}', [AdminController::class, 'deleteAddress']);
+    Route::put('/app-info/addresses/{addressId}/default', [AdminController::class, 'setDefaultAddress']);
     
     // Synchronization Management
     Route::get('/synchronizations', [AdminController::class, 'getSynchronizations']);

@@ -12,7 +12,7 @@
                 <table role="presentation" style="width: 100%; max-width: 600px; border-collapse: collapse; background-color: #ffffff; border-radius: 16px; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);">
                     <!-- Header -->
                     <tr>
-                        <td style="padding: 40px 40px 20px; text-align: center; background: linear-gradient(135deg, #B8860B 0%, #DAA520 50%, #FFD700 100%); border-radius: 16px 16px 0 0;">
+                        <td style="padding: 40px 40px 20px; text-align: center; background: linear-gradient(135deg, #000080 0%, #0000a0 100%); border-radius: 16px 16px 0 0;">
                             <h1 style="margin: 0; color: #ffffff; font-size: 28px; font-weight: 700; text-shadow: 0 2px 4px rgba(0,0,0,0.2);">
                                 Keur Serigne Saliou Vaisselle
                             </h1>
@@ -43,8 +43,8 @@
 
                             <!-- OTP Code Box -->
                             <div style="text-align: center; margin: 30px 0;">
-                                <div style="display: inline-block; background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%); border: 2px dashed #B8860B; border-radius: 12px; padding: 20px 40px;">
-                                    <span style="font-family: 'Courier New', monospace; font-size: 36px; font-weight: 700; letter-spacing: 8px; color: #B8860B;">
+                                <div style="display: inline-block; background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%); border: 2px dashed #fd7f07; border-radius: 12px; padding: 20px 40px;">
+                                    <span style="font-family: 'Courier New', monospace; font-size: 36px; font-weight: 700; letter-spacing: 8px; color: #fd7f07;">
                                         {{ $code }}
                                     </span>
                                 </div>
@@ -55,7 +55,7 @@
                             </p>
 
                             <!-- Security Notice -->
-                            <div style="margin-top: 30px; padding: 20px; background-color: #fff8e1; border-left: 4px solid #B8860B; border-radius: 4px;">
+                            <div style="margin-top: 30px; padding: 20px; background-color: #fff3e6; border-left: 4px solid #fd7f07; border-radius: 4px;">
                                 <p style="margin: 0; color: #666666; font-size: 14px;">
                                     <strong>🔒 Conseil de sécurité :</strong><br>
                                     Ne partagez jamais ce code avec quelqu'un d'autre. L'équipe KSSV ne vous demandera jamais votre code par téléphone ou par message.
@@ -70,7 +70,7 @@
                             <p style="margin: 0 0 10px; color: #999999; font-size: 14px;">
                                 Si vous n'avez pas demandé ce code, ignorez simplement cet email.
                             </p>
-                            <p style="margin: 0; color: #B8860B; font-size: 14px; font-weight: 600;">
+                            <p style="margin: 0; color: #000080; font-size: 14px; font-weight: 600;">
                                 © {{ date('Y') }} KSSV - Keur Serigne Saliou Vaisselle
                             </p>
                             <p style="margin: 10px 0 0; color: #999999; font-size: 12px;">
