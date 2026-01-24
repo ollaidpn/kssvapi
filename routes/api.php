@@ -198,6 +198,7 @@ Route::middleware('auth:sanctum')->prefix('admin')->group(function () {
     Route::post('/users', [AdminController::class, 'createAdmin']);
     Route::delete('/users/{id}', [AdminController::class, 'deleteAdmin']);
     Route::post('/users/{id}/resend-invitation', [AdminController::class, 'resendAdminInvitation']);
+    Route::put('/users/{id}/toggle-status', [AdminController::class, 'toggleAdminStatus']);
 });
 
 // ============================================

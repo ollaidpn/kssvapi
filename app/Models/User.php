@@ -23,8 +23,11 @@ class User extends Authenticatable
         'ccphone',
         'phone',
         'account_type',
+        'status',
         'reference',
         'avatar',
+        'activation_token',
+        'activation_token_expires_at',
     ];
 
     protected $searchableFields = ['*'];

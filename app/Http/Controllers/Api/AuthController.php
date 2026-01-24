@@ -42,6 +42,15 @@ class AuthController extends Controller
 
             $user = User::where('email', $request->email)->firstOrFail();
             
+            // Bloquer les comptes inactifs
+            if (($user->status ?? 'active') === 'inactive') {
+                Log::warning('API Auth: Tentative connexion compte inactif', ['email' => $request->email, 'user_id' => $user->id]);
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Votre compte a été désactivé. Veuillez contacter l\'administrateur.',
+                ], 403);
+            }
+            
             // Expiration fixe: 30 jours pour tous les types de comptes
             // La gestion d'inactivité admin se fait côté frontend si nécessaire
             $expirationMinutes = 43200; // 30 jours = 43200 minutes

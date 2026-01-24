@@ -15,6 +15,8 @@ class Order extends Model
         'discount',
         'total',
         'status',
+        'delivery_status',
+        'payment_status',
         'user_id',
         'reference',
         'promo_code_id',

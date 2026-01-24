@@ -15,6 +15,7 @@ class Payment extends Model
         'order_id',
         'amount',
         'paid_by',
+        'payment_type',
         'date',
         'reference',
         'transaction_id',

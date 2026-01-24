@@ -32,20 +32,20 @@ class AdminController extends Controller
         try {
             Log::info('API Admin: Acces dashboard', ['admin_id' => $request->user()?->id]);
             
-            // Ventes totales (somme des paiements)
-            $totalSales = Payment::sum('amount');
+            // Ventes totales ENCAISSÉES (somme des paiements completed)
+            $totalSales = Payment::where('status', 'completed')->sum('amount');
             
             // Calcul des variations
-            $lastMonthSales = Payment::where('created_at', '>=', now()->subMonth())->sum('amount');
-            $previousMonthSales = Payment::whereBetween('created_at', [now()->subMonths(2), now()->subMonth()])->sum('amount');
+            $lastMonthSales = Payment::where('status', 'completed')->where('created_at', '>=', now()->subMonth())->sum('amount');
+            $previousMonthSales = Payment::where('status', 'completed')->whereBetween('created_at', [now()->subMonths(2), now()->subMonth()])->sum('amount');
             $salesChange = $previousMonthSales > 0 
                 ? round((($lastMonthSales - $previousMonthSales) / $previousMonthSales) * 100, 1) 
                 : 0;
             
-            // Nombre de commandes
-            $ordersCount = Order::count();
-            $lastMonthOrders = Order::where('created_at', '>=', now()->subMonth())->count();
-            $previousMonthOrders = Order::whereBetween('created_at', [now()->subMonths(2), now()->subMonth()])->count();
+            // Nombre de commandes EN COURS (status = processing)
+            $ordersCount = Order::where('status', 'processing')->count();
+            $lastMonthOrders = Order::where('status', 'processing')->where('created_at', '>=', now()->subMonth())->count();
+            $previousMonthOrders = Order::where('status', 'processing')->whereBetween('created_at', [now()->subMonths(2), now()->subMonth()])->count();
             $ordersChange = $previousMonthOrders > 0 
                 ? round((($lastMonthOrders - $previousMonthOrders) / $previousMonthOrders) * 100, 1) 
                 : 0;
@@ -60,11 +60,11 @@ class AdminController extends Controller
                 ? round((($lastMonthClients - $previousMonthClients) / $previousMonthClients) * 100, 1) 
                 : 0;
             
-            // Articles vendus
-            $itemsSold = Cart::whereNotNull('order_id')->sum('qty');
-            $lastMonthItems = Cart::whereNotNull('order_id')
+            // Articles vendus (commandes PAYÉES)
+            $itemsSold = Cart::whereHas('order', fn($q) => $q->where('payment_status', 'paid'))->sum('qty');
+            $lastMonthItems = Cart::whereHas('order', fn($q) => $q->where('payment_status', 'paid'))
                 ->where('created_at', '>=', now()->subMonth())->sum('qty');
-            $previousMonthItems = Cart::whereNotNull('order_id')
+            $previousMonthItems = Cart::whereHas('order', fn($q) => $q->where('payment_status', 'paid'))
                 ->whereBetween('created_at', [now()->subMonths(2), now()->subMonth()])->sum('qty');
             $itemsChange = $previousMonthItems > 0 
                 ? round((($lastMonthItems - $previousMonthItems) / $previousMonthItems) * 100, 1) 
@@ -456,6 +456,7 @@ class AdminController extends Controller
                 'reference' => $payment->reference ?? 'PAY-' . str_pad($payment->id, 4, '0', STR_PAD_LEFT),
                 'amount' => (float) $payment->amount,
                 'paid_by' => $payment->paid_by ?? 'N/A',
+                'payment_type' => $payment->payment_type ?? 'online',
                 'date' => $payment->date?->format('Y-m-d'),
                 'created_at' => $payment->created_at->format('Y-m-d H:i'),
             ]);
@@ -472,6 +473,11 @@ class AdminController extends Controller
                         'id' => $order->id,
                         'reference' => $order->reference ?? 'CMD-' . str_pad($order->id, 4, '0', STR_PAD_LEFT),
                         'status' => $order->status ?? 'pending',
+                        'delivery_status' => $order->delivery_status ?? 'pending',
+                        'payment_status' => $order->payment_status ?? 'pending',
+                        'payment_method' => $order->payment_method ?? 'cash_on_delivery',
+                        'address' => $order->address,
+                        'city' => $order->city,
                         'discount' => (float) $order->discount,
                         'total' => (float) $order->total,
                         'created_at' => $order->created_at->format('Y-m-d H:i'),
@@ -517,28 +523,90 @@ class AdminController extends Controller
     {
         try {
             $validated = $request->validate([
-                'status' => 'required|string|in:pending,pending_payment,processing,paid,completed,delivered,cancelled',
+                'type' => 'required|string|in:general,delivery,payment',
+                'status' => 'required|string',
+                'paid_by' => 'nullable|string|in:cash,wave,orange_money,cheque,bank_transfer',
             ]);
             
             $order = Order::findOrFail($id);
-            $oldStatus = $order->status;
-            $order->status = $validated['status'];
-            $order->save();
+            $type = $validated['type'];
+            $newStatus = $validated['status'];
             
             Log::info('API Admin: Changement statut commande', [
                 'order_id' => $id,
-                'old_status' => $oldStatus,
-                'new_status' => $validated['status'],
+                'type' => $type,
+                'new_status' => $newStatus,
                 'admin_id' => $request->user()?->id,
             ]);
             
+            switch ($type) {
+                case 'general':
+                    // Validation des statuts généraux
+                    if (!in_array($newStatus, ['pending', 'pending_payment', 'processing', 'paid', 'completed', 'delivered', 'cancelled'])) {
+                        return response()->json(['success' => false, 'message' => 'Statut général invalide'], 422);
+                    }
+                    $order->status = $newStatus;
+                    break;
+                    
+                case 'delivery':
+                    // Validation des statuts de livraison
+                    if (!in_array($newStatus, ['pending', 'processing', 'delivered'])) {
+                        return response()->json(['success' => false, 'message' => 'Statut de livraison invalide'], 422);
+                    }
+                    $order->delivery_status = $newStatus;
+                    break;
+                    
+                case 'payment':
+                    // Vérifier si des paiements online existent (non modifiables)
+                    $hasOnlinePayment = $order->payments()->where('payment_type', 'online')->exists();
+                    if ($hasOnlinePayment) {
+                        return response()->json([
+                            'success' => false, 
+                            'message' => 'Impossible de modifier le statut d\'un paiement effectué en ligne'
+                        ], 422);
+                    }
+                    
+                    if ($newStatus === 'paid') {
+                        // Créer un paiement manuel
+                        $paidBy = $validated['paid_by'] ?? 'cash';
+                        $remainingAmount = $order->total - $order->payments()->sum('amount');
+                        
+                        if ($remainingAmount > 0) {
+                            Payment::create([
+                                'order_id' => $order->id,
+                                'amount' => $remainingAmount,
+                                'paid_by' => $paidBy,
+                                'payment_type' => 'manual',
+                                'reference' => 'PAY-' . strtoupper(\Str::random(8)),
+                                'date' => now(),
+                                'status' => 'completed',
+                            ]);
+                        }
+                        $order->payment_status = 'paid';
+                    } elseif ($newStatus === 'pending') {
+                        // Supprimer uniquement les paiements manuels
+                        $order->payments()->where('payment_type', 'manual')->delete();
+                        $order->payment_status = 'pending';
+                    }
+                    break;
+            }
+            
+            // Auto-complete: Si payé ET livré → statut = completed
+            if ($order->payment_status === 'paid' && $order->delivery_status === 'delivered') {
+                $order->status = 'completed';
+            }
+            
+            $order->save();
+            
             return response()->json([
                 'success' => true,
-                'message' => 'Statut mis à jour',
+                'message' => 'Statut mis à jour avec succès',
                 'data' => [
                     'id' => $order->id,
                     'reference' => $order->reference ?? 'CMD-' . str_pad($order->id, 4, '0', STR_PAD_LEFT),
                     'status' => $order->status,
+                    'delivery_status' => $order->delivery_status,
+                    'payment_status' => $order->payment_status,
                 ],
             ]);
         } catch (\Exception $e) {
@@ -2096,6 +2164,7 @@ class AdminController extends Controller
                     'ccphone' => $u->ccphone ?? '',
                     'phone' => $u->phone ?? '',
                     'is_active' => !empty($u->password),
+                    'status' => $u->status ?? 'active',
                     'created_at' => $u->created_at->format('Y-m-d'),
                 ]);
             
@@ -2216,6 +2285,60 @@ class AdminController extends Controller
             return response()->json(['success' => true, 'message' => 'Invitation renvoyée avec succès']);
         } catch (\Exception $e) {
             Log::error('API Admin: Erreur renvoi invitation', ['error' => $e->getMessage()]);
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * PUT /api/admin/users/{id}/toggle-status
+     * Activer/Désactiver un administrateur
+     */
+    public function toggleAdminStatus(Request $request, int $id): JsonResponse
+    {
+        try {
+            $admin = User::where('account_type', 'admin')->find($id);
+            
+            if (!$admin) {
+                return response()->json(['success' => false, 'message' => 'Administrateur non trouvé'], 404);
+            }
+            
+            // Ne pas permettre de désactiver son propre compte
+            if ($request->user()?->id === $id) {
+                return response()->json(['success' => false, 'message' => 'Vous ne pouvez pas désactiver votre propre compte'], 403);
+            }
+            
+            $currentStatus = $admin->status ?? 'active';
+            $newStatus = $currentStatus === 'active' ? 'inactive' : 'active';
+            
+            $admin->update(['status' => $newStatus]);
+            
+            Log::info('API Admin: Toggle status admin', [
+                'admin_id' => $id,
+                'old_status' => $currentStatus,
+                'new_status' => $newStatus,
+                'by_admin_id' => $request->user()?->id,
+            ]);
+            
+            // Envoyer un email si désactivé
+            if ($newStatus === 'inactive') {
+                try {
+                    \Mail::to($admin->email)->send(new \App\Mail\AccountDeactivatedMail($admin));
+                    Log::info('API Admin: Email de désactivation envoyé', ['admin_id' => $id]);
+                } catch (\Exception $mailError) {
+                    Log::warning('API Admin: Erreur envoi mail désactivation', ['error' => $mailError->getMessage()]);
+                }
+                
+                // Révoquer tous les tokens de l'utilisateur
+                $admin->tokens()->delete();
+            }
+            
+            return response()->json([
+                'success' => true,
+                'status' => $newStatus,
+                'message' => $newStatus === 'active' ? 'Compte réactivé avec succès' : 'Compte désactivé avec succès',
+            ]);
+        } catch (\Exception $e) {
+            Log::error('API Admin: Erreur toggle status', ['error' => $e->getMessage()]);
             return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
         }
     }
