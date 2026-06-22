@@ -33,7 +33,7 @@ Route::prefix('sections')->group(function () {
 });
 
 // ============================================
-// Proxy Routes for HomeIP API (Public - Avoids CORS)
+// Proxy Routes for catalogue API (Public - Avoids CORS)
 // ============================================
 
 Route::prefix('proxy')->group(function () {

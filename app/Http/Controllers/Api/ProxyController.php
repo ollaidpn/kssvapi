@@ -10,11 +10,11 @@ use Illuminate\Support\Facades\Log;
 
 class ProxyController extends Controller
 {
-    private $baseUrl = 'https://kssvapi.homeip.net';
+    private $baseUrl = 'https://kssv.homeip.net/API/shop';
 
     /**
      * Get products list
-     * Proxy for /shop/produit
+     * Proxy for /produit
      */
     public function getProducts(Request $request): JsonResponse
     {
@@ -31,7 +31,7 @@ class ProxyController extends Controller
 
             Log::info('Proxy: Fetching products', ['params' => $params]);
 
-            $response = Http::timeout(60)->get("{$this->baseUrl}/shop/produit", $params);
+            $response = Http::timeout(60)->get("{$this->baseUrl}/produit", $params);
 
             return response()->json($response->json());
         } catch (\Exception $e) {
@@ -39,21 +39,21 @@ class ProxyController extends Controller
             return response()->json([
                 'OK' => 0,
                 'Contenue' => [],
-                'error' => 'Failed to fetch products from HomeIP API'
+                'error' => 'Failed to fetch products from catalogue API'
             ], 500);
         }
     }
 
     /**
      * Get single product detail
-     * Proxy for /shop/produit/{id}
+     * Proxy for /produit/{id}
      */
     public function getProduct($id): JsonResponse
     {
         try {
             Log::info('Proxy: Fetching product detail', ['id' => $id]);
 
-            $response = Http::timeout(30)->get("{$this->baseUrl}/shop/produit/{$id}");
+            $response = Http::timeout(30)->get("{$this->baseUrl}/produit/{$id}");
 
             return response()->json($response->json());
         } catch (\Exception $e) {
@@ -61,21 +61,21 @@ class ProxyController extends Controller
             return response()->json([
                 'OK' => 0,
                 'Contenue' => [],
-                'error' => 'Failed to fetch product from HomeIP API'
+                'error' => 'Failed to fetch product from catalogue API'
             ], 500);
         }
     }
 
     /**
      * Search products
-     * Proxy for /shop/produit/search/{query}
+     * Proxy for /produit/search/{query}
      */
     public function searchProducts($query, Request $request): JsonResponse
     {
         try {
             Log::info('Proxy: Searching products', ['query' => $query]);
 
-            $response = Http::timeout(30)->get("{$this->baseUrl}/shop/produit/search/{$query}");
+            $response = Http::timeout(30)->get("{$this->baseUrl}/produit/search/{$query}");
 
             return response()->json($response->json());
         } catch (\Exception $e) {
@@ -83,14 +83,14 @@ class ProxyController extends Controller
             return response()->json([
                 'OK' => 0,
                 'Contenue' => [],
-                'error' => 'Failed to search products from HomeIP API'
+                'error' => 'Failed to search products from catalogue API'
             ], 500);
         }
     }
 
     /**
      * Get categories list
-     * Proxy for /shop/category
+     * Proxy for /category
      */
     public function getCategories(Request $request): JsonResponse
     {
@@ -102,7 +102,7 @@ class ProxyController extends Controller
 
             Log::info('Proxy: Fetching categories', ['params' => $params]);
 
-            $response = Http::timeout(30)->get("{$this->baseUrl}/shop/category", $params);
+            $response = Http::timeout(30)->get("{$this->baseUrl}/category", $params);
 
             return response()->json($response->json());
         } catch (\Exception $e) {
@@ -110,21 +110,21 @@ class ProxyController extends Controller
             return response()->json([
                 'OK' => 0,
                 'Contenue' => [],
-                'error' => 'Failed to fetch categories from HomeIP API'
+                'error' => 'Failed to fetch categories from catalogue API'
             ], 500);
         }
     }
 
     /**
      * Get single category detail
-     * Proxy for /shop/category/{id}
+     * Proxy for /category/{id}
      */
     public function getCategory($id): JsonResponse
     {
         try {
             Log::info('Proxy: Fetching category detail', ['id' => $id]);
 
-            $response = Http::timeout(30)->get("{$this->baseUrl}/shop/category/{$id}");
+            $response = Http::timeout(30)->get("{$this->baseUrl}/category/{$id}");
 
             return response()->json($response->json());
         } catch (\Exception $e) {
@@ -132,7 +132,7 @@ class ProxyController extends Controller
             return response()->json([
                 'OK' => 0,
                 'Contenue' => [],
-                'error' => 'Failed to fetch category from HomeIP API'
+                'error' => 'Failed to fetch category from catalogue API'
             ], 500);
         }
     }

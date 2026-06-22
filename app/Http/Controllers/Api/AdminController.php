@@ -17,6 +17,7 @@ use App\Models\Brand;
 use App\Models\Item;
 use App\Models\Synchronization;
 use App\Helpers\Shortcut;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
@@ -1422,6 +1423,7 @@ class AdminController extends Controller
                         'id' => $cat->id,
                         'name' => $cat->name,
                         'logo' => $cat->logo ? Shortcut::fileExistsOnServer($cat->logo) : null,
+                        'local_image' => $cat->local_image ? Shortcut::fileExistsOnServer($cat->local_image) : null,
                         'parent_id' => $cat->parent_id,
                         'items_count' => $cat->items_count,
                         'created_at' => $cat->created_at?->format('Y-m-d H:i:s'),
@@ -1508,7 +1510,13 @@ class AdminController extends Controller
 
             return response()->json([
                 'success' => true,
-                'data' => $category,
+                'data' => [
+                    'id' => $category->id,
+                    'name' => $category->name,
+                    'logo' => $category->logo ? Shortcut::fileExistsOnServer($category->logo) : null,
+                    'local_image' => $category->local_image ? Shortcut::fileExistsOnServer($category->local_image) : null,
+                    'parent_id' => $category->parent_id,
+                ],
                 'message' => 'Catégorie modifiée avec succès'
             ]);
         } catch (\Exception $e) {
@@ -1968,6 +1976,15 @@ class AdminController extends Controller
      */
     public function runSync(Request $request): JsonResponse
     {
+        $lock = Cache::lock('homeip-sync-lock', 30 * 60);
+
+        if (! $lock->get()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Une synchronisation est déjà en cours',
+            ], 409);
+        }
+
         try {
             $type = $request->get('type', 'all'); // 'all', 'items', 'categories'
             $results = ['items' => 0, 'categories' => 0, 'errors' => []];
@@ -2000,11 +2017,13 @@ class AdminController extends Controller
                 'success' => false,
                 'message' => 'Erreur: ' . $e->getMessage()
             ], 500);
+        } finally {
+            $lock->release();
         }
     }
 
     /**
-     * Synchronise les articles depuis HomeIP
+     * Synchronise les articles depuis l'API catalogue
      */
     private function syncItems(array &$errors): int
     {
@@ -2015,7 +2034,7 @@ class AdminController extends Controller
 
         for ($page = 0; $page < $maxPages; $page++) {
             try {
-                $response = Http::timeout(30)->get("https://kssvapi.homeip.net/shop/produit", [
+                $response = Http::timeout(30)->get("https://kssv.homeip.net/API/shop/produit", [
                     'PAGE_START' => $pageStart,
                     'PAGE_NBLIGNE' => $pageSize
                 ]);
@@ -2054,6 +2073,7 @@ class AdminController extends Controller
                 }
 
                 $pageStart += $pageSize;
+                usleep(250000);
 
             } catch (\Exception $e) {
                 $errors[] = "Exception items page $page: " . $e->getMessage();
@@ -2065,14 +2085,14 @@ class AdminController extends Controller
     }
 
     /**
-     * Synchronise les catégories depuis HomeIP
+     * Synchronise les catégories depuis l'API catalogue
      */
     private function syncCategories(array &$errors): int
     {
         $count = 0;
 
         try {
-            $response = Http::timeout(30)->get("https://kssvapi.homeip.net/shop/category", [
+            $response = Http::timeout(30)->get("https://kssv.homeip.net/API/shop/category", [
                 'PAGE_START' => 0,
                 'PAGE_NBLIGNE' => 500
             ]);
@@ -2101,6 +2121,8 @@ class AdminController extends Controller
                 $this->upsertSync('category', (string)$category['id'], $category);
                 $count++;
             }
+
+            usleep(250000);
 
         } catch (\Exception $e) {
             $errors[] = "Exception categories: " . $e->getMessage();

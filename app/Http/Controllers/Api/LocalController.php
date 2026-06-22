@@ -418,13 +418,9 @@ class LocalController extends Controller
                     'phone2' => $appInfo->phone2,
                     'email1' => $appInfo->email1,
                     'email2' => $appInfo->email2,
-                    'latitude' => $appInfo->latitude,
-                    'longitude' => $appInfo->longitude,
                     'logo_color' => Shortcut::fileExistsOnServer($appInfo->logo_color),
                     'logo_white' => Shortcut::fileExistsOnServer($appInfo->logo_white),
-                    'address' => $appInfo->address,
-                    'town' => $appInfo->town,
-                    'country' => $appInfo->country,
+                    'addresses' => $appInfo->addresses ?? [],
                 ]
             ]);
             

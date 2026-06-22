@@ -40,7 +40,7 @@ return [
 
     'intech_sms' => [
         'app_key' => env('INTECH_SMS_APP_KEY', '68863D3BABAEA68863D3BABAEB'),
-        'sender' => env('INTECH_SMS_SENDER', 'KSSV'),
+        'sender' => env('INTECH_SMS_SENDER', 'KSSV.SN'),
         'endpoint' => env('INTECH_SMS_ENDPOINT', 'https://gateway.intechsms.sn/api/send-sms'),
     ],
 
