@@ -82,27 +82,9 @@ class Shortcut
      */
     public static function getFrontendUrl(?Request $request = null): string
     {
-        // Essayer Origin header
-        if ($request && $request->header('Origin')) {
-            return rtrim($request->header('Origin'), '/');
-        }
-        
-        // Essayer Referer header
-        if ($request && $request->header('Referer')) {
-            $parsed = parse_url($request->header('Referer'));
-            if (isset($parsed['scheme']) && isset($parsed['host'])) {
-                $url = $parsed['scheme'] . '://' . $parsed['host'];
-                if (isset($parsed['port']) && $parsed['port'] != 80 && $parsed['port'] != 443) {
-                    $url .= ':' . $parsed['port'];
-                }
-                return $url;
-            }
-        }
-        
-        // Fallback config
-        return config(
-            'app.frontend_website_endpoint',
-            config('app.frontend_url', config('app.url'))
+        return rtrim(
+            config('app.frontend_website_endpoint', 'https://kssv.ollaid.com'),
+            '/'
         );
     }
 }

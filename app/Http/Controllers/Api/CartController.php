@@ -143,7 +143,7 @@ class CartController extends Controller
             ]);
             
             $request->validate([
-                'qty' => 'required|integer|min:1',
+                'qty' => 'required|integer|min:0',
             ]);
 
             $cart = Cart::where('id', $id)
@@ -161,6 +161,20 @@ class CartController extends Controller
                     'success' => false,
                     'message' => 'Article non trouvé dans le panier'
                 ], 404);
+            }
+
+            if ((int) $request->qty <= 0) {
+                $cart->delete();
+
+                Log::info('API Cart: Article supprime via qty=0', [
+                    'user_id' => $user->id,
+                    'cart_id' => $id
+                ]);
+
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Article supprimé du panier'
+                ]);
             }
 
             $oldQty = $cart->qty;

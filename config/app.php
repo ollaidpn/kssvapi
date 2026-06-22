@@ -70,8 +70,8 @@ return [
     | Exemple: FRONTEND_URL=https://kssv.sn
     |
     */
-    'frontend_url' => env('FRONTEND_URL', env('APP_URL', 'http://localhost')),
-    'frontend_website_endpoint' => env('FRONTEND_WEBSITE_ENDPOINT', env('FRONTEND_URL', env('APP_URL', 'http://localhost'))),
+    'frontend_url' => env('FRONTEND_URL', 'https://kssv.ollaid.com'),
+    'frontend_website_endpoint' => env('FRONTEND_WEBSITE_ENDPOINT', env('FRONTEND_URL', 'https://kssv.ollaid.com')),
     'kssv_endpoint' => env('KSSV_ENDPOINT', 'https://kssvapi.homeip.net/shop'),
 
     /*
