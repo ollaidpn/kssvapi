@@ -4,10 +4,12 @@ namespace App\Http\Controllers\Api;
 
 use App\Models\Order;
 use App\Models\Payment;
+use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use App\Http\Controllers\Controller;
 use Illuminate\Support\Facades\Log;
+use App\Services\OrderNotificationService;
 
 class WebhookController extends Controller
 {
@@ -44,7 +46,7 @@ class WebhookController extends Controller
             }
 
             // Trouver la commande
-            $order = Order::where('reference', $orderReference)->first();
+            $order = Order::with(['user', 'carts'])->where('reference', $orderReference)->first();
 
             if (!$order) {
                 Log::warning('Webhook Fayko: Commande non trouvée', [
@@ -99,6 +101,25 @@ class WebhookController extends Controller
                     Log::info('Webhook Fayko: Nouveau paiement créé (fallback)', [
                         'order_id' => $order->id,
                         'transaction_id' => $transactionId
+                    ]);
+                }
+
+                // Notifier les administrateurs sans bloquer le webhook
+                try {
+                    $client = $order->user ?? User::find($order->user_id);
+                    if ($client) {
+                        (new OrderNotificationService())->sendAdminNewOrderAlert(
+                            $client,
+                            $order,
+                            $order->carts->count(),
+                            $order->payment_method ?? 'unknown'
+                        );
+                    }
+                } catch (\Throwable $notificationError) {
+                    Log::error('Webhook Fayko: Erreur notification admin', [
+                        'order_id' => $order->id,
+                        'order_reference' => $orderReference,
+                        'error' => $notificationError->getMessage()
                     ]);
                 }
 

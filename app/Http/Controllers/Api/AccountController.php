@@ -5,7 +5,6 @@ namespace App\Http\Controllers\Api;
 use App\Models\Cart;
 use App\Models\Order;
 use App\Models\Payment;
-use App\Models\AppInfo;
 use App\Models\User;
 use App\Helpers\Shortcut;
 use Illuminate\Http\Request;
@@ -15,8 +14,8 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 use App\Services\FaykoPaymentService;
+use App\Services\OrderNotificationService;
 use App\Mail\OrderConfirmationMail;
-use App\Mail\NewOrderAlertMail;
 
 class AccountController extends Controller
 {
@@ -538,15 +537,7 @@ class AccountController extends Controller
                 }
                 
                 // Envoyer alerte à l'admin
-                try {
-                    $appInfo = AppInfo::first();
-                    if ($appInfo && $appInfo->email1) {
-                        Mail::to($appInfo->email1)->send(new NewOrderAlertMail($user, $order, $orderItems->count(), $paymentMethod));
-                        Log::info('API Account: Alerte nouvelle commande envoyée à admin', ['email' => $appInfo->email1]);
-                    }
-                } catch (\Exception $emailError) {
-                    Log::error('API Account: Erreur envoi alerte admin', ['error' => $emailError->getMessage()]);
-                }
+                (new OrderNotificationService())->sendAdminNewOrderAlert($user, $order, $orderItems->count(), $paymentMethod);
                 
                 // SMS confirmation au client (commande payée)
                 try {
@@ -612,15 +603,7 @@ class AccountController extends Controller
             }
             
             // Envoyer alerte à l'admin (appInfo->email1)
-            try {
-                $appInfo = AppInfo::first();
-                if ($appInfo && $appInfo->email1) {
-                    Mail::to($appInfo->email1)->send(new NewOrderAlertMail($user, $order, $orderItems->count(), $paymentMethod));
-                    Log::info('API Account: Alerte nouvelle commande envoyée à admin', ['email' => $appInfo->email1]);
-                }
-            } catch (\Exception $emailError) {
-                Log::error('API Account: Erreur envoi alerte admin', ['error' => $emailError->getMessage()]);
-            }
+            (new OrderNotificationService())->sendAdminNewOrderAlert($user, $order, $orderItems->count(), $paymentMethod);
             
             // SMS confirmation au client (commande COD = non payée)
             try {
