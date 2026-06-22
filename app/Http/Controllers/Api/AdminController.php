@@ -2031,10 +2031,11 @@ class AdminController extends Controller
         $pageStart = 0;
         $pageSize = 200;
         $maxPages = 50; // Limite pour éviter boucle infinie
+        $catalogBaseUrl = rtrim($this->getKssvEndpoint(), '/');
 
         for ($page = 0; $page < $maxPages; $page++) {
             try {
-                $response = Http::timeout(30)->get("https://kssv.homeip.net/API/shop/produit", [
+                $response = Http::timeout(30)->get("{$catalogBaseUrl}/produit", [
                     'PAGE_START' => $pageStart,
                     'PAGE_NBLIGNE' => $pageSize
                 ]);
@@ -2090,9 +2091,10 @@ class AdminController extends Controller
     private function syncCategories(array &$errors): int
     {
         $count = 0;
+        $catalogBaseUrl = rtrim($this->getKssvEndpoint(), '/');
 
         try {
-            $response = Http::timeout(30)->get("https://kssv.homeip.net/API/shop/category", [
+            $response = Http::timeout(30)->get("{$catalogBaseUrl}/category", [
                 'PAGE_START' => 0,
                 'PAGE_NBLIGNE' => 500
             ]);
@@ -2129,6 +2131,11 @@ class AdminController extends Controller
         }
 
         return $count;
+    }
+
+    private function getKssvEndpoint(): string
+    {
+        return config('app.kssv_endpoint', 'https://kssvapi.homeip.net/shop');
     }
 
     /**

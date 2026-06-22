@@ -20,7 +20,7 @@ Route::get('/produits/{id}', function ($id) {
     $product = Item::find($id);
     
     if (!$product) {
-        return redirect(config('app.frontend_url') . '/produits/' . $id);
+        return redirect(config('app.frontend_website_endpoint', config('app.frontend_url')) . '/produits/' . $id);
     }
     
     // Détecter si c'est un bot/crawler
@@ -41,7 +41,7 @@ Route::get('/produits/{id}', function ($id) {
     }
     
     // Sinon, rediriger vers le frontend React
-    return redirect(config('app.frontend_url') . '/produits/' . $id);
+    return redirect(config('app.frontend_website_endpoint', config('app.frontend_url')) . '/produits/' . $id);
 });
 
 // Log Viewer (page d'accueil)

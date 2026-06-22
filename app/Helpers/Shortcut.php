@@ -75,7 +75,7 @@ class Shortcut
 
     /**
      * Récupère l'URL du frontend automatiquement depuis la requête
-     * Fallback sur config('app.frontend_url') si non disponible
+     * Fallback sur config('app.frontend_website_endpoint') si non disponible
      *
      * @param Request|null $request
      * @return string
@@ -100,6 +100,9 @@ class Shortcut
         }
         
         // Fallback config
-        return config('app.frontend_url', config('app.url'));
+        return config(
+            'app.frontend_website_endpoint',
+            config('app.frontend_url', config('app.url'))
+        );
     }
 }

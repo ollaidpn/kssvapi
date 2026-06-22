@@ -29,7 +29,7 @@ class NewOrderAlertMail extends Mailable
         $this->order = $order;
         $this->itemsCount = $itemsCount;
         $this->paymentMethod = $paymentMethod;
-        $this->frontendUrl = $frontendUrl ?? $order->frontend_url ?? config('app.frontend_url', config('app.url'));
+        $this->frontendUrl = $frontendUrl ?? $order->frontend_url ?? config('app.frontend_website_endpoint', config('app.frontend_url', config('app.url')));
     }
 
     /**

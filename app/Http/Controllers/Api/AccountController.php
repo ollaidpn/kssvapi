@@ -351,6 +351,7 @@ class AccountController extends Controller
             
             // Déterminer le statut initial selon le mode de paiement
             $initialStatus = $paymentMethod === 'cash_on_delivery' ? 'pending' : 'processing';
+            $initialPaymentStatus = 'pending';
             
             // Récupérer l'URL frontend dynamiquement pour la stocker avec la commande
             $frontendUrl = Shortcut::getFrontendUrl($request);
@@ -363,6 +364,7 @@ class AccountController extends Controller
                 'discount' => $discount,
                 'delivery_fee' => $deliveryFee,
                 'status' => $initialStatus,
+                'payment_status' => $initialPaymentStatus,
                 'address' => $validated['address'],
                 'city' => $validated['city'],
                 'payment_method' => $paymentMethod,
@@ -424,6 +426,34 @@ class AccountController extends Controller
                 // Construire le success_url avec le payment_id (utiliser l'URL stockée dans la commande)
                 $successUrl = $order->frontend_url . '/paiement-reussi?payment_id=' . $payment->id;
                 $errorUrl = $order->frontend_url . '/checkout';
+                $faykoPhone = $this->formatPhoneForFayko($user->ccphone, $user->phone);
+
+                if ($faykoPhone === '') {
+                    Log::warning('API Account: Numéro Fayko invalide', [
+                        'user_id' => $user->id,
+                        'ccphone' => $user->ccphone,
+                        'phone' => $user->phone,
+                        'order_id' => $order->id,
+                    ]);
+
+                    $payment->status = 'failed';
+                    $payment->save();
+                    $order->status = 'failed';
+                    $order->payment_status = 'failed';
+                    $order->save();
+
+                    Cart::where('order_id', $order->id)->update([
+                        'order_id' => null,
+                        'type' => 'cart',
+                        'status' => 'pending',
+                        'total' => null,
+                    ]);
+
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Numéro de téléphone invalide pour le paiement Wave/Orange Money'
+                    ], 422);
+                }
                 
                 Log::info('API Account: Montant envoyé à Fayko', [
                     'subtotal' => $subtotal,
@@ -442,7 +472,7 @@ class AccountController extends Controller
                     'name' => $designation,  // Désignation enrichie
                     'description' => $description,  // Liste des articles
                     'ccphone' => $user->ccphone ?? '+221',
-                    'phone' => $user->phone ?? '',
+                    'phone' => $faykoPhone,
                     'extra_data' => [
                         'origin' => 'kssv',
                         'order_reference' => $reference,
@@ -459,6 +489,7 @@ class AccountController extends Controller
                     $payment->save();
                     
                     $order->status = 'failed';
+                    $order->payment_status = 'failed';
                     $order->save();
                     
                     // Remettre les articles dans le panier
@@ -688,7 +719,8 @@ class AccountController extends Controller
             
             return response()->json([
                 'success' => true,
-                'status' => $order->status
+                'status' => $order->status,
+                'payment_status' => $order->payment_status ?? 'pending'
             ]);
             
         } catch (\Exception $e) {
@@ -729,6 +761,7 @@ class AccountController extends Controller
             
             // Annuler la commande
             $order->status = 'cancelled';
+            $order->payment_status = 'cancelled';
             $order->save();
 
             // Annuler les paiements en attente
@@ -853,6 +886,29 @@ class AccountController extends Controller
     }
 
     /**
+     * Normalise un numéro de téléphone pour Fayko.
+     */
+    private function formatPhoneForFayko(?string $ccphone, ?string $phone): string
+    {
+        $countryCode = preg_replace('/\D/', '', (string) ($ccphone ?? '221')) ?: '221';
+        $phoneDigits = preg_replace('/\D/', '', (string) ($phone ?? ''));
+
+        if ($phoneDigits === '') {
+            return '';
+        }
+
+        if (str_starts_with($phoneDigits, '00' . $countryCode)) {
+            return substr($phoneDigits, 2 + strlen($countryCode));
+        }
+
+        if (str_starts_with($phoneDigits, $countryCode)) {
+            return substr($phoneDigits, strlen($countryCode));
+        }
+
+        return $phoneDigits;
+    }
+
+    /**
      * POST /api/account/avatar
      * Upload/Update de la photo de profil
      */
@@ -947,7 +1003,7 @@ class AccountController extends Controller
             $cartItems = Cart::where('order_id', $order->id)->get();
             
             // Vérifier le statut du paiement
-            $isPaid = $payment->status === 'success' || $order->payment_status === 'paid';
+            $isPaid = $payment->status === 'success' || $order->payment_status === 'paid' || $order->status === 'paid';
             
             // Mapper les items
             $items = $cartItems->map(function($cart) {
@@ -979,7 +1035,7 @@ class AccountController extends Controller
             return response()->json([
                 'success' => true,
                 'is_paid' => $isPaid,
-                'payment_status' => $payment->status,
+                'payment_status' => $order->payment_status ?? $payment->status,
                 'data' => [
                     'payment' => [
                         'id' => $payment->id,

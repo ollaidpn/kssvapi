@@ -25,7 +25,7 @@ class AdminInvitationMail extends Mailable
     {
         $this->admin = $admin;
         $this->activationToken = $activationToken;
-        $this->frontendUrl = $frontendUrl ?? config('app.frontend_url', config('app.url'));
+        $this->frontendUrl = $frontendUrl ?? config('app.frontend_website_endpoint', config('app.frontend_url', config('app.url')));
     }
 
     /**

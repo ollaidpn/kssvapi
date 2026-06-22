@@ -71,6 +71,8 @@ return [
     |
     */
     'frontend_url' => env('FRONTEND_URL', env('APP_URL', 'http://localhost')),
+    'frontend_website_endpoint' => env('FRONTEND_WEBSITE_ENDPOINT', env('FRONTEND_URL', env('APP_URL', 'http://localhost'))),
+    'kssv_endpoint' => env('KSSV_ENDPOINT', 'https://kssvapi.homeip.net/shop'),
 
     /*
     |--------------------------------------------------------------------------

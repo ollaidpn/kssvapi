@@ -34,7 +34,7 @@ class OrderConfirmationMail extends Mailable
         $this->items = $items;
         $this->isPaid = $isPaid;
         $this->appInfo = AppInfo::first();
-        $this->frontendUrl = $frontendUrl ?? $order->frontend_url ?? config('app.frontend_url', config('app.url'));
+        $this->frontendUrl = $frontendUrl ?? $order->frontend_url ?? config('app.frontend_website_endpoint', config('app.frontend_url', config('app.url')));
     }
 
     /**

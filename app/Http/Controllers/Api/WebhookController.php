@@ -65,6 +65,7 @@ class WebhookController extends Controller
             // Mettre à jour selon le statut
             if ($status === 'success') {
                 $order->status = 'paid';
+                $order->payment_status = 'paid';
                 $order->save();
 
                 // Mettre à jour le paiement existant (créé lors de la commande)
@@ -110,6 +111,7 @@ class WebhookController extends Controller
             } else {
                 // Statut d'échec ou autre
                 $order->status = 'failed';
+                $order->payment_status = 'failed';
                 $order->save();
 
                 // Marquer le paiement comme échoué

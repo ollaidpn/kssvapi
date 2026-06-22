@@ -29,6 +29,19 @@ class FaykoPaymentService
     public function makePayment(array $payload): array
     {
         try {
+            if (empty($this->publicKey) || empty($this->secretKey) || empty($this->webhookKey)) {
+                Log::error('FaykoPaymentService: Configuration manquante', [
+                    'has_public_key' => !empty($this->publicKey),
+                    'has_secret_key' => !empty($this->secretKey),
+                    'has_webhook_key' => !empty($this->webhookKey),
+                ]);
+
+                return [
+                    'success' => false,
+                    'message' => 'Configuration Fayko incomplète',
+                ];
+            }
+
             // Utiliser le helper pour obtenir le montant (mode TEST = 10 FCFA)
             $amount = Shortcut::getFaykoAmount((float) ($payload['amount'] ?? 0));
             
@@ -53,8 +66,8 @@ class FaykoPaymentService
                 'paid_by'     => $paidBy,
                 'ccphone'     => $payload['ccphone'] ?? '+221',
                 'phone'       => $payload['phone'] ?? '',
-                'error_url'   => $payload['error_url'] ?? config('app.frontend_url', config('app.url')),
-                'success_url' => $payload['success_url'] ?? config('app.frontend_url', config('app.url')),
+                'error_url'   => $payload['error_url'] ?? config('app.frontend_website_endpoint', config('app.frontend_url', config('app.url'))),
+                'success_url' => $payload['success_url'] ?? config('app.frontend_website_endpoint', config('app.frontend_url', config('app.url'))),
                 'extra_data'  => json_encode($payload['extra_data'] ?? []),
             ];
 

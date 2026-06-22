@@ -23,7 +23,7 @@ class WelcomeMail extends Mailable
     public function __construct(User $user, ?string $frontendUrl = null)
     {
         $this->user = $user;
-        $this->frontendUrl = $frontendUrl ?? config('app.frontend_url', config('app.url'));
+        $this->frontendUrl = $frontendUrl ?? config('app.frontend_website_endpoint', config('app.frontend_url', config('app.url')));
     }
 
     /**

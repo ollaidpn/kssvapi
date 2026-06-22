@@ -10,7 +10,12 @@ use Illuminate\Support\Facades\Log;
 
 class ProxyController extends Controller
 {
-    private $baseUrl = 'https://kssv.homeip.net/API/shop';
+    private string $baseUrl;
+
+    public function __construct()
+    {
+        $this->baseUrl = rtrim(config('app.kssv_endpoint', 'https://kssvapi.homeip.net/shop'), '/');
+    }
 
     /**
      * Get products list

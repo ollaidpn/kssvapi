@@ -10,7 +10,7 @@
     <meta property="og:title" content="{{ $product['name'] }} - {{ number_format($product['price'], 0, ',', '.') }} FCFA">
     <meta property="og:description" content="{{ $product['name'] }} disponible chez KSSV - Keur Serigne Saliou Vaisselle.">
     <meta property="og:image" content="{{ $product['image'] }}">
-    <meta property="og:url" content="{{ config('app.frontend_url') }}/produits/{{ $product['id'] }}">
+    <meta property="og:url" content="{{ config('app.frontend_website_endpoint', config('app.frontend_url')) }}/produits/{{ $product['id'] }}">
     <meta property="og:type" content="product">
     <meta property="og:site_name" content="KSSV - Keur Serigne Saliou Vaisselle">
     
@@ -39,7 +39,7 @@
     
     <!-- Redirection vers l'app React -->
     <script>
-        window.location.href = "{{ config('app.frontend_url') }}/produits/{{ $product['id'] }}";
+        window.location.href = "{{ config('app.frontend_website_endpoint', config('app.frontend_url')) }}/produits/{{ $product['id'] }}";
     </script>
 </head>
 <body style="font-family: system-ui, sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; background: #f5f5f5;">
